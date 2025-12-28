@@ -1,3 +1,6 @@
+<!-- Dynamic Header -->
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:667eea,100:764ba2&height=120&section=header"/>
+
 # OpenCode Smart Voice Notify
 
 > **Disclaimer**: This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://opencode.ai) in any way. It is an independent community plugin.
@@ -275,3 +278,6 @@ MIT
 
 - Open an issue on [GitHub](https://github.com/MasuRii/opencode-smart-voice-notify/issues)
 - Check the [OpenCode docs](https://opencode.ai/docs/plugins)
+
+<!-- Dynamic Header -->
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:667eea,100:764ba2&height=120&section=header"/>
