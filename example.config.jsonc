@@ -48,7 +48,7 @@
     // TTS ENGINE SELECTION
     // ============================================================
     // 'elevenlabs' - Best quality, anime-like voices (requires API key, free tier: 10k chars/month)
-    // 'edge'       - Good quality neural voices (free, requires: pip install edge-tts)
+    // 'edge'       - Good quality neural voices (Free, Native Node.js implementation)
     // 'sapi'       - Windows built-in voices (free, offline, robotic)
     "ttsEngine": "elevenlabs",
     
@@ -81,7 +81,7 @@
     // ============================================================
     // EDGE TTS SETTINGS (Free Neural Voices - Fallback)
     // ============================================================
-    // Requires: pip install edge-tts
+    // Native Node.js implementation (No external dependencies)
     
     // Voice options (run 'edge-tts --list-voices' to see all):
     //   'en-US-AnaNeural'   - Young, cute, cartoon-like (RECOMMENDED)

@@ -198,6 +198,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           fallbackSound: options.fallbackSound
         });
 
+        // CRITICAL FIX: Check if cancelled during playback (user responded while TTS was speaking)
+        if (!pendingReminders.has(type)) {
+          debugLog(`scheduleTTSReminder: ${type} cancelled during playback - aborting follow-up`);
+          return;
+        }
+
         // Clean up
         pendingReminders.delete(type);
         
@@ -268,6 +274,18 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     // Step 1: Play the immediate sound notification
     if (soundFile) {
       await playSound(soundFile, soundLoops);
+    }
+
+    // CRITICAL FIX: Check if user responded during sound playback
+    // For idle notifications: check if there was new activity after the idle start
+    if (type === 'idle' && lastUserActivityTime > lastSessionIdleTime) {
+      debugLog(`smartNotify: user active during sound - aborting idle reminder`);
+      return;
+    }
+    // For permission notifications: check if the permission was already handled
+    if (type === 'permission' && !activePermissionId) {
+      debugLog(`smartNotify: permission handled during sound - aborting reminder`);
+      return;
     }
 
     // Step 2: Schedule TTS reminder if user doesn't respond
@@ -347,9 +365,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           // CRITICAL: Clear activePermissionId FIRST to prevent race condition
           // where permission.updated handler is still running async operations
           const repliedPermissionId = event.properties?.permissionID;
-          if (activePermissionId === repliedPermissionId) {
+          
+          // Match if IDs are equal, or if we have an active permission with unknown ID (undefined)
+          // (This happens if permission.updated received an event without permissionID)
+          if (activePermissionId === repliedPermissionId || activePermissionId === undefined) {
             activePermissionId = null;
-            debugLog(`Permission replied: cleared activePermissionId ${repliedPermissionId}`);
+            debugLog(`Permission replied: cleared activePermissionId ${repliedPermissionId || '(unknown)'}`);
           }
           lastUserActivityTime = Date.now();
           cancelPendingReminder('permission'); // Cancel permission-specific reminder
@@ -402,7 +423,13 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         if (event.type === "permission.updated") {
           // CRITICAL: Capture permissionID IMMEDIATELY (before any async work)
           // This prevents race condition where user responds before we finish notifying
-          const permissionId = event.properties?.permissionID;
+          // NOTE: In permission.updated, the property is 'id', but in permission.replied it is 'permissionID'
+          const permissionId = event.properties?.id;
+          
+          if (!permissionId) {
+             debugLog('permission.updated: permission ID missing. properties keys: ' + Object.keys(event.properties || {}).join(', '));
+          }
+
           activePermissionId = permissionId;
           
           debugLog(`permission.updated: notifying (permissionId=${permissionId})`);

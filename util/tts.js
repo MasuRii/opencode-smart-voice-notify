@@ -110,6 +110,8 @@ export const getTTSConfig = () => {
   });
 };
 
+let elevenLabsQuotaExceeded = false;
+
 /**
  * Creates a TTS utility instance
  * @param {object} params - { $, client }
@@ -118,6 +120,21 @@ export const getTTSConfig = () => {
 export const createTTS = ({ $, client }) => {
   const config = getTTSConfig();
   const logFile = path.join(configDir, 'smart-voice-notify-debug.log');
+
+  const showToast = async (message, variant = 'info') => {
+    if (!config.enableToast) return;
+    try {
+      if (typeof client?.tui?.showToast === 'function') {
+        await client.tui.showToast({
+          body: {
+            message: message,
+            variant: variant,
+            duration: 6000
+          }
+        });
+      }
+    } catch (e) {}
+  };
 
   const debugLog = (message) => {
     if (!config.debugLog) return;
@@ -174,6 +191,8 @@ export const createTTS = ({ $, client }) => {
    * ElevenLabs Engine (Online, High Quality, Anime-like voices)
    */
   const speakWithElevenLabs = async (text) => {
+    if (elevenLabsQuotaExceeded) return false;
+
     if (!config.elevenLabsApiKey) {
       debugLog('speakWithElevenLabs: No API key configured');
       return false;
@@ -204,6 +223,19 @@ export const createTTS = ({ $, client }) => {
       return true;
     } catch (e) {
       debugLog(`speakWithElevenLabs error: ${e.message}`);
+      
+      // Handle quota exceeded (401 specifically, or specific error message)
+      const isQuotaError = 
+        e.statusCode === 401 || 
+        e.message?.includes('401') || 
+        e.message?.toLowerCase().includes('quota_exceeded') || 
+        e.message?.toLowerCase().includes('quota exceeded');
+
+      if (isQuotaError) {
+        elevenLabsQuotaExceeded = true;
+        await showToast("⚠️ ElevenLabs quota exceeded! Switching to Edge TTS for this session.", "error");
+      }
+      
       return false;
     }
   };
@@ -212,16 +244,20 @@ export const createTTS = ({ $, client }) => {
    * Edge TTS Engine (Free, Neural voices)
    */
   const speakWithEdgeTTS = async (text) => {
-    if (!$) return false;
     try {
-      const voice = config.edgeVoice || 'en-US-AnaNeural';
+      const { MsEdgeTTS, OUTPUT_FORMAT } = await import('msedge-tts');
+      const tts = new MsEdgeTTS();
+      const voice = config.edgeVoice || 'en-US-JennyNeural';
       const pitch = config.edgePitch || '+0Hz';
-      const rate = config.edgeRate || '+0%';
-      const tempFile = path.join(os.tmpdir(), `opencode-edge-${Date.now()}.mp3`);
+      const rate = config.edgeRate || '+10%';
+      const volume = config.edgeVolume || '+0%';
       
-      await $`edge-tts --voice ${voice} --pitch ${pitch} --rate ${rate} --text ${text} --write-media ${tempFile}`.quiet();
-      await playAudioFile(tempFile);
-      try { fs.unlinkSync(tempFile); } catch (e) {}
+      await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      
+      const { audioFilePath } = await tts.toFile(os.tmpdir(), text, { pitch, rate, volume });
+      
+      await playAudioFile(audioFilePath);
+      try { fs.unlinkSync(audioFilePath); } catch (e) {}
       return true;
     } catch (e) {
       debugLog(`speakWithEdgeTTS error: ${e.message}`);

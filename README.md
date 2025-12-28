@@ -16,7 +16,7 @@ A smart voice notification plugin for [OpenCode](https://opencode.ai) with **mul
 The plugin automatically tries multiple TTS engines in order, falling back if one fails:
 
 1. **ElevenLabs** (Online) - High-quality, anime-like voices with natural expression
-2. **Edge TTS** (Free) - Microsoft's neural voices, no API key required
+2. **Edge TTS** (Free) - Microsoft's neural voices, native Node.js implementation (no Python required)
 3. **Windows SAPI** (Offline) - Built-in Windows speech synthesis
 4. **Local Sound Files** (Fallback) - Plays bundled MP3 files if all TTS fails
 
@@ -31,8 +31,10 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - Follow-up reminders with exponential backoff
 - Automatic cancellation when user responds
 - Per-notification type delays (permission requests are more urgent)
+- **Smart Quota Handling**: Automatically falls back to free Edge TTS if ElevenLabs quota is exceeded
 
 ### System Integration
+- **Native Edge TTS**: No external dependencies (Python/pip) required
 - Wake monitor from sleep before notifying
 - Auto-boost volume if too low
 - TUI toast notifications
@@ -122,7 +124,7 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
     // TTS ENGINE SELECTION
     // ============================================================
     // 'elevenlabs' - Best quality, anime-like voices (requires API key)
-    // 'edge'       - Good quality neural voices (free, requires: pip install edge-tts)
+    // 'edge'       - Good quality neural voices (Free, Native Node.js implementation)
     // 'sapi'       - Windows built-in voices (free, offline)
     "ttsEngine": "edge",
     "enableTTS": true,
@@ -217,10 +219,7 @@ See `example.config.jsonc` for more details.
 - Internet connection
 
 ### For Edge TTS
-- Python with `edge-tts` package:
-  ```bash
-  pip install edge-tts
-  ```
+- Internet connection (No external dependencies required)
 
 ### For Windows SAPI
 - Windows OS (uses built-in System.Speech)
