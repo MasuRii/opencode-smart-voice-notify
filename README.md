@@ -74,10 +74,10 @@ Add to your OpenCode config file (`~/.config/opencode/config.json`):
 
 When you first run OpenCode with this plugin installed, it will **automatically create**:
 
-1. **`~/.config/opencode/smart-voice-notify.jsonc`** - A default config file with sensible defaults
-2. **`~/.config/opencode/assets/*.mp3`** - Bundled notification sound files
+1. **`~/.config/opencode/smart-voice-notify.jsonc`** - A comprehensive configuration file with all available options fully documented.
+2. **`~/.config/opencode/assets/*.mp3`** - Bundled notification sound files.
 
-You can then customize the config file as needed.
+The auto-generated configuration includes all advanced settings, message arrays, and engine options, so you don't have to refer back to the documentation for available settings.
 
 ### Manual Configuration
 
