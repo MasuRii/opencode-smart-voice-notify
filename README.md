@@ -4,6 +4,9 @@
 
 A smart voice notification plugin for [OpenCode](https://opencode.ai) with **multiple TTS engines** and an intelligent reminder system.
 
+<img width="1456" height="720" alt="image" src="https://github.com/user-attachments/assets/52ccf357-2548-400b-a346-6362f2fc3180" />
+
+
 ## Features
 
 ### Smart TTS Engine Selection
