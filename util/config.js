@@ -14,6 +14,17 @@ const parseJSONC = (jsonc) => {
 };
 
 /**
+ * Helper to format JSON values for the template.
+ * @param {any} val 
+ * @param {number} indent 
+ * @returns {string}
+ */
+const formatJSON = (val, indent = 0) => {
+  const json = JSON.stringify(val, null, 4);
+  return indent > 0 ? json.replace(/\n/g, '\n' + ' '.repeat(indent)) : json;
+};
+
+/**
  * Get the directory where this plugin is installed.
  * Used to find bundled assets like example.config.jsonc
  */
@@ -26,8 +37,10 @@ const getPluginDir = () => {
 /**
  * Generate a comprehensive default configuration file content.
  * This provides users with ALL available options fully documented.
+ * @param {object} overrides - Existing configuration to preserve
+ * @param {string} version - Current version to set in config
  */
-const generateDefaultConfig = () => {
+const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
   return `{
     // ============================================================
     // OpenCode Smart Voice Notify - Configuration
@@ -43,6 +56,9 @@ const generateDefaultConfig = () => {
     //
     // ============================================================
 
+    // Internal version tracking - DO NOT REMOVE
+    "_configVersion": "${version}",
+
     // ============================================================
     // NOTIFICATION MODE SETTINGS (Smart Notification System)
     // ============================================================
@@ -51,25 +67,25 @@ const generateDefaultConfig = () => {
     //   'tts-first'   - Speak TTS immediately, no sound
     //   'both'        - Play sound AND speak TTS immediately
     //   'sound-only'  - Only play sound, no TTS at all
-    "notificationMode": "sound-first",
+    "notificationMode": "${overrides.notificationMode || 'sound-first'}",
     
     // ============================================================
     // TTS REMINDER SETTINGS (When user doesn't respond to sound)
     // ============================================================
     
     // Enable TTS reminder if user doesn't respond after sound notification
-    "enableTTSReminder": true,
+    "enableTTSReminder": ${overrides.enableTTSReminder !== undefined ? overrides.enableTTSReminder : true},
     
     // Delay (in seconds) before TTS reminder fires
     // Set globally or per-notification type
-    "ttsReminderDelaySeconds": 30,         // Global default
-    "idleReminderDelaySeconds": 30,        // For task completion notifications
-    "permissionReminderDelaySeconds": 20,  // For permission requests (more urgent)
+    "ttsReminderDelaySeconds": ${overrides.ttsReminderDelaySeconds !== undefined ? overrides.ttsReminderDelaySeconds : 30},         // Global default
+    "idleReminderDelaySeconds": ${overrides.idleReminderDelaySeconds !== undefined ? overrides.idleReminderDelaySeconds : 30},        // For task completion notifications
+    "permissionReminderDelaySeconds": ${overrides.permissionReminderDelaySeconds !== undefined ? overrides.permissionReminderDelaySeconds : 20},  // For permission requests (more urgent)
     
     // Follow-up reminders if user STILL doesn't respond after first TTS
-    "enableFollowUpReminders": true,
-    "maxFollowUpReminders": 3,              // Max number of follow-up TTS reminders
-    "reminderBackoffMultiplier": 1.5,       // Each follow-up waits longer (30s, 45s, 67s...)
+    "enableFollowUpReminders": ${overrides.enableFollowUpReminders !== undefined ? overrides.enableFollowUpReminders : true},
+    "maxFollowUpReminders": ${overrides.maxFollowUpReminders !== undefined ? overrides.maxFollowUpReminders : 3},              // Max number of follow-up TTS reminders
+    "reminderBackoffMultiplier": ${overrides.reminderBackoffMultiplier !== undefined ? overrides.reminderBackoffMultiplier : 1.5},       // Each follow-up waits longer (30s, 45s, 67s...)
 
     // ============================================================
     // TTS ENGINE SELECTION
@@ -77,10 +93,10 @@ const generateDefaultConfig = () => {
     // 'elevenlabs' - Best quality, anime-like voices (requires API key, free tier: 10k chars/month)
     // 'edge'       - Good quality neural voices (free, requires: pip install edge-tts)
     // 'sapi'       - Windows built-in voices (free, offline, robotic)
-    "ttsEngine": "elevenlabs",
+    "ttsEngine": "${overrides.ttsEngine || 'elevenlabs'}",
     
     // Enable TTS for notifications (falls back to sound files if TTS fails)
-    "enableTTS": true,
+    "enableTTS": ${overrides.enableTTS !== undefined ? overrides.enableTTS : true},
     
     // ============================================================
     // ELEVENLABS SETTINGS (Best Quality - Anime-like Voices)
@@ -92,7 +108,7 @@ const generateDefaultConfig = () => {
     // 1. Uncomment elevenLabsApiKey and add your key
     // 2. Change ttsEngine above to "elevenlabs"
     //
-    // "elevenLabsApiKey": "YOUR_API_KEY_HERE",
+    ${overrides.elevenLabsApiKey ? `"elevenLabsApiKey": "${overrides.elevenLabsApiKey}",` : `// "elevenLabsApiKey": "YOUR_API_KEY_HERE",`}
     
     // Voice ID - Recommended cute/anime-like voices:
     //   'cgSgspJ2msm6clMCkdW9' - Jessica (Playful, Bright, Warm) - RECOMMENDED
@@ -100,15 +116,15 @@ const generateDefaultConfig = () => {
     //   'jsCqWAovK2LkecY7zXl4' - Freya (Expressive, Confident)
     //   'EXAVITQu4vr4xnSDxMaL' - Sarah (Soft, Warm)
     // Browse more at: https://elevenlabs.io/voice-library
-    "elevenLabsVoiceId": "cgSgspJ2msm6clMCkdW9",
+    "elevenLabsVoiceId": "${overrides.elevenLabsVoiceId || 'cgSgspJ2msm6clMCkdW9'}",
     
     // Model: 'eleven_turbo_v2_5' (fast, good), 'eleven_multilingual_v2' (highest quality)
-    "elevenLabsModel": "eleven_turbo_v2_5",
+    "elevenLabsModel": "${overrides.elevenLabsModel || 'eleven_turbo_v2_5'}",
     
     // Voice tuning (0.0 to 1.0)
-    "elevenLabsStability": 0.5,       // Lower = more expressive, Higher = more consistent
-    "elevenLabsSimilarity": 0.75,     // How closely to match the original voice
-    "elevenLabsStyle": 0.5,           // Style exaggeration (higher = more expressive)
+    "elevenLabsStability": ${overrides.elevenLabsStability !== undefined ? overrides.elevenLabsStability : 0.5},       // Lower = more expressive, Higher = more consistent
+    "elevenLabsSimilarity": ${overrides.elevenLabsSimilarity !== undefined ? overrides.elevenLabsSimilarity : 0.75},     // How closely to match the original voice
+    "elevenLabsStyle": ${overrides.elevenLabsStyle !== undefined ? overrides.elevenLabsStyle : 0.5},           // Style exaggeration (higher = more expressive)
     
     // ============================================================
     // EDGE TTS SETTINGS (Free Neural Voices - Default Engine)
@@ -121,13 +137,13 @@ const generateDefaultConfig = () => {
     //   'en-US-AriaNeural'  - Confident, clear
     //   'en-GB-SoniaNeural' - British, friendly
     //   'en-AU-NatashaNeural' - Australian, warm
-    "edgeVoice": "en-US-JennyNeural",
+    "edgeVoice": "${overrides.edgeVoice || 'en-US-JennyNeural'}",
     
     // Pitch adjustment: +0Hz to +100Hz (higher = more anime-like)
-    "edgePitch": "+0Hz",
+    "edgePitch": "${overrides.edgePitch || '+0Hz'}",
     
     // Speech rate: -50% to +100%
-    "edgeRate": "+10%",
+    "edgeRate": "${overrides.edgeRate || '+10%'}",
     
     // ============================================================
     // SAPI SETTINGS (Windows Built-in - Last Resort Fallback)
@@ -140,16 +156,16 @@ const generateDefaultConfig = () => {
     //   'Microsoft Zira Desktop' - Female, US English
     //   'Microsoft David Desktop' - Male, US English
     //   'Microsoft Hazel Desktop' - Female, UK English
-    "sapiVoice": "Microsoft Zira Desktop",
+    "sapiVoice": "${overrides.sapiVoice || 'Microsoft Zira Desktop'}",
     
     // Speech rate: -10 (slowest) to +10 (fastest), 0 is normal
-    "sapiRate": -1,
+    "sapiRate": ${overrides.sapiRate !== undefined ? overrides.sapiRate : -1},
     
     // Pitch: 'x-low', 'low', 'medium', 'high', 'x-high'
-    "sapiPitch": "medium",
+    "sapiPitch": "${overrides.sapiPitch || 'medium'}",
     
     // Volume: 'silent', 'x-soft', 'soft', 'medium', 'loud', 'x-loud'
-    "sapiVolume": "loud",
+    "sapiVolume": "${overrides.sapiVolume || 'loud'}",
     
     // ============================================================
     // INITIAL TTS MESSAGES (Used immediately or after sound)
@@ -157,22 +173,22 @@ const generateDefaultConfig = () => {
     // ============================================================
     
     // Messages when agent finishes work (task completion)
-    "idleTTSMessages": [
+    "idleTTSMessages": ${formatJSON(overrides.idleTTSMessages || [
         "All done! Your task has been completed successfully.",
         "Hey there! I finished working on your request.",
         "Task complete! Ready for your review whenever you are.",
         "Good news! Everything is done and ready for you.",
         "Finished! Let me know if you need anything else."
-    ],
+    ], 4)},
     
     // Messages for permission requests
-    "permissionTTSMessages": [
+    "permissionTTSMessages": ${formatJSON(overrides.permissionTTSMessages || [
         "Attention please! I need your permission to continue.",
         "Hey! Quick approval needed to proceed with the task.",
         "Heads up! There is a permission request waiting for you.",
         "Excuse me! I need your authorization before I can continue.",
         "Permission required! Please review and approve when ready."
-    ],
+    ], 4)},
 
     // ============================================================
     // TTS REMINDER MESSAGES (More urgent - used after delay if no response)
@@ -180,22 +196,22 @@ const generateDefaultConfig = () => {
     // ============================================================
     
     // Reminder messages when agent finished but user hasn't responded
-    "idleReminderTTSMessages": [
+    "idleReminderTTSMessages": ${formatJSON(overrides.idleReminderTTSMessages || [
         "Hey, are you still there? Your task has been waiting for review.",
         "Just a gentle reminder - I finished your request a while ago!",
         "Hello? I completed your task. Please take a look when you can.",
         "Still waiting for you! The work is done and ready for review.",
         "Knock knock! Your completed task is patiently waiting for you."
-    ],
+    ], 4)},
     
     // Reminder messages when permission still needed
-    "permissionReminderTTSMessages": [
+    "permissionReminderTTSMessages": ${formatJSON(overrides.permissionReminderTTSMessages || [
         "Hey! I still need your permission to continue. Please respond!",
         "Reminder: There is a pending permission request. I cannot proceed without you.",
         "Hello? I am waiting for your approval. This is getting urgent!",
         "Please check your screen! I really need your permission to move forward.",
         "Still waiting for authorization! The task is on hold until you respond."
-    ],
+    ], 4)},
     
     // ============================================================
     // SOUND FILES (For immediate notifications)
@@ -205,36 +221,35 @@ const generateDefaultConfig = () => {
     // Sound files are automatically copied here on first run
     // You can replace with your own custom MP3/WAV files
     
-    "idleSound": "assets/Soft-high-tech-notification-sound-effect.mp3",
-    "permissionSound": "assets/Machine-alert-beep-sound-effect.mp3",
+    "idleSound": "${overrides.idleSound || 'assets/Soft-high-tech-notification-sound-effect.mp3'}",
+    "permissionSound": "${overrides.permissionSound || 'assets/Machine-alert-beep-sound-effect.mp3'}",
     
     // ============================================================
     // GENERAL SETTINGS
     // ============================================================
     
     // Wake monitor from sleep when notifying (Windows/macOS)
-    "wakeMonitor": true,
+    "wakeMonitor": ${overrides.wakeMonitor !== undefined ? overrides.wakeMonitor : true},
     
     // Force system volume up if below threshold
-    "forceVolume": true,
+    "forceVolume": ${overrides.forceVolume !== undefined ? overrides.forceVolume : true},
     
     // Volume threshold (0-100): force volume if current level is below this
-    "volumeThreshold": 50,
+    "volumeThreshold": ${overrides.volumeThreshold !== undefined ? overrides.volumeThreshold : 50},
     
     // Show TUI toast notifications in OpenCode terminal
-    "enableToast": true,
+    "enableToast": ${overrides.enableToast !== undefined ? overrides.enableToast : true},
     
     // Enable audio notifications (sound files and TTS)
-    "enableSound": true,
+    "enableSound": ${overrides.enableSound !== undefined ? overrides.enableSound : true},
     
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
-    "idleThresholdSeconds": 60,
+    "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},
     
     // Enable debug logging to ~/.config/opencode/smart-voice-notify-debug.log
     // Useful for troubleshooting notification issues
-    "debugLog": false
-}
-`;
+    "debugLog": ${overrides.debugLog !== undefined ? overrides.debugLog : false}
+}`;
 };
 
 /**
@@ -276,6 +291,7 @@ const copyBundledAssets = (configDir) => {
 /**
  * Loads a configuration file from the OpenCode config directory.
  * If the file doesn't exist, creates a default config file.
+ * Performs version checks and migrates config if necessary.
  * @param {string} name - Name of the config file (without .jsonc extension)
  * @param {object} defaults - Default values if file doesn't exist or is invalid
  * @returns {object}
@@ -284,36 +300,50 @@ export const loadConfig = (name, defaults = {}) => {
   const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
   const filePath = path.join(configDir, `${name}.jsonc`);
 
-  if (!fs.existsSync(filePath)) {
-    // Auto-create the default config file
+  // Get current version from package.json
+  const pluginDir = getPluginDir();
+  const pkg = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf-8'));
+  const currentVersion = pkg.version;
+
+  let existingConfig = null;
+  if (fs.existsSync(filePath)) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      existingConfig = parseJSONC(content);
+    } catch (error) {
+      // If file is invalid JSONC, we'll treat it as missing and overwrite
+    }
+  }
+
+  // Version check and migration logic
+  if (!existingConfig || existingConfig._configVersion !== currentVersion) {
     try {
       // Ensure config directory exists
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
 
-      // Write the default config
-      const defaultConfig = generateDefaultConfig();
-      fs.writeFileSync(filePath, defaultConfig, 'utf-8');
+      // Generate new config content using existing values as overrides
+      // This preserves user settings while updating comments and adding new fields
+      const newConfigContent = generateDefaultConfig(existingConfig || {}, currentVersion);
+      fs.writeFileSync(filePath, newConfigContent, 'utf-8');
 
-      // Also copy bundled assets (sound files) to the config directory
+      // Also ensure all bundled assets (sound files) are present in the config directory
       copyBundledAssets(configDir);
 
-      // Parse and return the newly created config merged with defaults
-      const config = parseJSONC(defaultConfig);
-      return { ...defaults, ...config };
+      if (existingConfig) {
+        console.log(`[Smart Voice Notify] Config migrated to version ${currentVersion}`);
+      } else {
+        console.log(`[Smart Voice Notify] Initialized default config at ${filePath}`);
+      }
+
+      // Re-parse the newly written config
+      existingConfig = parseJSONC(newConfigContent);
     } catch (error) {
-      // If we can't create the file, just return defaults
-      return defaults;
+      // If migration fails, try to return whatever we have or defaults
+      return existingConfig || defaults;
     }
   }
 
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const config = parseJSONC(content);
-    return { ...defaults, ...config };
-  } catch (error) {
-    // Silently return defaults - don't use console.error as it breaks TUI
-    return defaults;
-  }
+  return { ...defaults, ...existingConfig };
 };
