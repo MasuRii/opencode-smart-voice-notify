@@ -106,7 +106,7 @@ export const getTTSConfig = () => {
     enableSound: true,
     enableToast: true,
     volumeThreshold: 50,
-    idleThresholdSeconds: 60,
+    idleThresholdSeconds: 30,
     debugLog: false
   });
 };
@@ -345,19 +345,16 @@ ${ssml}
   };
 
   /**
-   * Check if the system has been idle long enough that the monitor might be asleep.
-   * On Linux, we always return true (assume monitor might be asleep) since idle detection
-   * varies significantly across desktop environments.
+   * Get the current system idle time in seconds.
    */
-  const isMonitorLikelyAsleep = async () => {
+  const getSystemIdleSeconds = async () => {
     if (platform === 'linux') {
       // On Linux, we can't reliably detect idle time across all DEs
-      // Return true to always attempt wake (it's a no-op if already awake)
-      return true;
+      // Return a high value to always attempt wake (it's a no-op if already awake)
+      return 999;
     }
-    if (platform !== 'win32' || !$) return true;
+    if (platform !== 'win32' || !$) return 999;
     try {
-      const idleThreshold = config.idleThresholdSeconds || 60;
       const cmd = `
         Add-Type -TypeDefinition @'
 using System;
@@ -383,10 +380,9 @@ public static class IdleCheck {
 [IdleCheck]::GetIdleSeconds()
       `;
       const result = await $`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${cmd}`.quiet();
-      const idleSeconds = parseInt(result.stdout?.toString().trim() || '0', 10);
-      return idleSeconds >= idleThreshold;
+      return parseInt(result.stdout?.toString().trim() || '0', 10);
     } catch (e) {
-      return true;
+      return 999; // Assume idle on error
     }
   };
 
@@ -426,19 +422,27 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
   const wakeMonitor = async (force = false) => {
     if (!config.wakeMonitor || !$) return;
     try {
-      if (!force) {
-        const likelyAsleep = await isMonitorLikelyAsleep();
-        if (!likelyAsleep) return;
+      const idleSeconds = await getSystemIdleSeconds();
+      const threshold = config.idleThresholdSeconds || 30;
+
+      if (!force && idleSeconds < threshold) {
+        debugLog(`wakeMonitor: skipped (idle ${idleSeconds}s < ${threshold}s)`);
+        return;
       }
+
+      debugLog(`wakeMonitor: attempting to wake monitor (idle: ${idleSeconds}s, force: ${force})`);
       
       if (platform === 'win32') {
-        const cmd = `Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern int SendMessage(int hWnd, int hMsg, int wParam, int lParam);' -Name "Win32SendMessage" -Namespace Win32Functions; [Win32Functions.Win32SendMessage]::SendMessage(0xFFFF, 0x0112, 0xF170, -1)`;
+        const cmd = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{F15}')`;
         await $`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${cmd}`.quiet();
+        debugLog('wakeMonitor: Windows wake command executed');
       } else if (platform === 'darwin') {
         await $`caffeinate -u -t 1`.quiet();
+        debugLog('wakeMonitor: macOS wake command executed');
       } else if (platform === 'linux' && linux) {
         // Use the Linux platform module for wake monitor
         await linux.wakeMonitor();
+        debugLog('wakeMonitor: Linux wake command executed');
       }
     } catch (e) {
       debugLog(`wakeMonitor error: ${e.message}`);
