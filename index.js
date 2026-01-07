@@ -27,7 +27,17 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
 
   const platform = os.platform();
   const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
-  const logFile = path.join(configDir, 'smart-voice-notify-debug.log');
+  const logsDir = path.join(configDir, 'logs');
+  const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
+  
+  // Ensure logs directory exists if debug logging is enabled
+  if (config.debugLog && !fs.existsSync(logsDir)) {
+    try {
+      fs.mkdirSync(logsDir, { recursive: true });
+    } catch (e) {
+      // Silently fail - logging is optional
+    }
+  }
 
   // Track pending TTS reminders (can be cancelled if user responds)
   const pendingReminders = new Map();
@@ -46,6 +56,20 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
   // Track active permission request to prevent race condition where user responds
   // before async notification code runs. Set on permission.updated, cleared on permission.replied.
   let activePermissionId = null;
+
+  // ========================================
+  // PERMISSION BATCHING STATE
+  // Batches multiple simultaneous permission requests into a single notification
+  // ========================================
+  
+  // Array of permission IDs waiting to be notified (collected during batch window)
+  let pendingPermissionBatch = [];
+  
+  // Timeout ID for the batch window (debounce timer)
+  let permissionBatchTimeout = null;
+  
+  // Batch window duration in milliseconds (how long to wait for more permissions)
+  const PERMISSION_BATCH_WINDOW_MS = config.permissionBatchWindowMs || 800;
 
   /**
    * Write debug message to log file
@@ -137,8 +161,8 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
    * Schedule a TTS reminder if user doesn't respond within configured delay.
    * The reminder uses a personalized TTS message.
    * @param {string} type - 'idle' or 'permission'
-   * @param {string} message - The TTS message to speak
-   * @param {object} options - Additional options
+   * @param {string} message - The TTS message to speak (used directly, supports count-aware messages)
+   * @param {object} options - Additional options (fallbackSound, permissionCount)
    */
   const scheduleTTSReminder = (type, message, options = {}) => {
     // Check if TTS reminders are enabled
@@ -156,7 +180,10 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     // Cancel any existing reminder of this type
     cancelPendingReminder(type);
 
-    debugLog(`scheduleTTSReminder: scheduling ${type} TTS in ${delaySeconds}s`);
+    // Store permission count for generating count-aware messages in reminders
+    const permissionCount = options.permissionCount || 1;
+
+    debugLog(`scheduleTTSReminder: scheduling ${type} TTS in ${delaySeconds}s (count=${permissionCount})`);
 
     const timeoutId = setTimeout(async () => {
       try {
@@ -174,14 +201,17 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           return;
         }
 
-        debugLog(`scheduleTTSReminder: firing ${type} TTS reminder`);
+        debugLog(`scheduleTTSReminder: firing ${type} TTS reminder (count=${reminder?.permissionCount || 1})`);
         
-        // Get the appropriate reminder messages (more personalized/urgent)
-        const reminderMessages = type === 'permission' 
-          ? config.permissionReminderTTSMessages
-          : config.idleReminderTTSMessages;
-        
-        const reminderMessage = getRandomMessage(reminderMessages);
+        // Get the appropriate reminder message
+        // For permissions with count > 1, use the count-aware message generator
+        const storedCount = reminder?.permissionCount || 1;
+        let reminderMessage;
+        if (type === 'permission') {
+          reminderMessage = getPermissionMessage(storedCount, true);
+        } else {
+          reminderMessage = getRandomMessage(config.idleReminderTTSMessages);
+        }
 
         // Check for ElevenLabs API key configuration issues
         // If user hasn't responded (reminder firing) and config is missing, warn about fallback
@@ -226,7 +256,15 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
                 return;
               }
               
-              const followUpMessage = getRandomMessage(reminderMessages);
+              // Use count-aware message for follow-ups too
+              const followUpStoredCount = followUpReminder?.permissionCount || 1;
+              let followUpMessage;
+              if (type === 'permission') {
+                followUpMessage = getPermissionMessage(followUpStoredCount, true);
+              } else {
+                followUpMessage = getRandomMessage(config.idleReminderTTSMessages);
+              }
+              
               await tts.wakeMonitor();
               await tts.forceVolume();
               await tts.speak(followUpMessage, {
@@ -240,7 +278,8 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
             pendingReminders.set(type, {
               timeoutId: followUpTimeoutId,
               scheduledAt: Date.now(),
-              followUpCount
+              followUpCount,
+              permissionCount: storedCount  // Preserve the count for follow-ups
             });
           }
         }
@@ -250,11 +289,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       }
     }, delayMs);
 
-    // Store the pending reminder
+    // Store the pending reminder with permission count
     pendingReminders.set(type, {
       timeoutId,
       scheduledAt: Date.now(),
-      followUpCount: 0
+      followUpCount: 0,
+      permissionCount  // Store count for later use
     });
   };
 
@@ -268,7 +308,8 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       soundFile,
       soundLoops = 1,
       ttsMessage,
-      fallbackSound
+      fallbackSound,
+      permissionCount = 1  // Support permission count for batched notifications
     } = options;
 
     // Step 1: Play the immediate sound notification
@@ -290,7 +331,7 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
 
     // Step 2: Schedule TTS reminder if user doesn't respond
     if (config.enableTTSReminder && ttsMessage) {
-      scheduleTTSReminder(type, ttsMessage, { fallbackSound });
+      scheduleTTSReminder(type, ttsMessage, { fallbackSound, permissionCount });
     }
     
     // Step 3: If TTS-first mode is enabled, also speak immediately
@@ -303,6 +344,108 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         enableTTS: true,
         fallbackSound
       });
+    }
+  };
+
+  /**
+   * Get a count-aware TTS message for permission requests
+   * @param {number} count - Number of permission requests
+   * @param {boolean} isReminder - Whether this is a reminder message
+   * @returns {string} The formatted message
+   */
+  const getPermissionMessage = (count, isReminder = false) => {
+    const messages = isReminder 
+      ? config.permissionReminderTTSMessages 
+      : config.permissionTTSMessages;
+    
+    if (count === 1) {
+      // Single permission - use regular message
+      return getRandomMessage(messages);
+    } else {
+      // Multiple permissions - use count-aware messages if available, or format dynamically
+      const countMessages = isReminder
+        ? config.permissionReminderTTSMessagesMultiple
+        : config.permissionTTSMessagesMultiple;
+      
+      if (countMessages && countMessages.length > 0) {
+        // Use configured multi-permission messages (replace {count} placeholder)
+        const template = getRandomMessage(countMessages);
+        return template.replace('{count}', count.toString());
+      } else {
+        // Fallback: generate a dynamic message
+        return `Attention! There are ${count} permission requests waiting for your approval.`;
+      }
+    }
+  };
+
+  /**
+   * Process the batched permission requests as a single notification
+   * Called after the batch window expires
+   */
+  const processPermissionBatch = async () => {
+    // Capture and clear the batch
+    const batch = [...pendingPermissionBatch];
+    const batchCount = batch.length;
+    pendingPermissionBatch = [];
+    permissionBatchTimeout = null;
+    
+    if (batchCount === 0) {
+      debugLog('processPermissionBatch: empty batch, skipping');
+      return;
+    }
+
+    debugLog(`processPermissionBatch: processing ${batchCount} permission(s)`);
+    
+    // Set activePermissionId to the first one (for race condition checks)
+    // We track all IDs in the batch for proper cleanup
+    activePermissionId = batch[0];
+    
+    // Show toast with count
+    const toastMessage = batchCount === 1
+      ? "⚠️ Permission request requires your attention"
+      : `⚠️ ${batchCount} permission requests require your attention`;
+    await showToast(toastMessage, "warning", 8000);
+
+    // CHECK: Did user already respond while we were showing toast?
+    if (pendingPermissionBatch.length > 0) {
+      // New permissions arrived during toast - they'll be handled in next batch
+      debugLog('processPermissionBatch: new permissions arrived during toast');
+    }
+    
+    // Check if any permission was already replied to
+    if (activePermissionId === null) {
+      debugLog('processPermissionBatch: aborted - user already responded');
+      return;
+    }
+
+    // Get count-aware TTS message
+    const ttsMessage = getPermissionMessage(batchCount, false);
+    const reminderMessage = getPermissionMessage(batchCount, true);
+
+    // Smart notification: sound first, TTS reminder later
+    await smartNotify('permission', {
+      soundFile: config.permissionSound,
+      soundLoops: batchCount === 1 ? 2 : Math.min(3, batchCount), // More loops for more permissions
+      ttsMessage: reminderMessage,
+      fallbackSound: config.permissionSound,
+      // Pass count for potential use in notification
+      permissionCount: batchCount
+    });
+    
+    // Speak immediately if in TTS-first or both mode (with count-aware message)
+    if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
+      await tts.wakeMonitor();
+      await tts.forceVolume();
+      await tts.speak(ttsMessage, {
+        enableTTS: true,
+        fallbackSound: config.permissionSound
+      });
+    }
+    
+    // Final check: if user responded during notification, cancel scheduled reminder
+    if (activePermissionId === null) {
+      debugLog('processPermissionBatch: user responded during notification - cancelling reminder');
+      cancelPendingReminder('permission');
     }
   };
 
@@ -373,6 +516,20 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           const repliedPermissionId = event.properties?.permissionID || event.properties?.requestID;
           const response = event.properties?.response || event.properties?.reply;
           
+          // Remove this permission from the pending batch (if still waiting)
+          if (repliedPermissionId && pendingPermissionBatch.includes(repliedPermissionId)) {
+            pendingPermissionBatch = pendingPermissionBatch.filter(id => id !== repliedPermissionId);
+            debugLog(`Permission replied: removed ${repliedPermissionId} from pending batch (${pendingPermissionBatch.length} remaining)`);
+          }
+          
+          // If batch is now empty and we have a pending batch timeout, we can cancel it
+          // (user responded to all permissions before batch window expired)
+          if (pendingPermissionBatch.length === 0 && permissionBatchTimeout) {
+            clearTimeout(permissionBatchTimeout);
+            permissionBatchTimeout = null;
+            debugLog('Permission replied: cancelled batch timeout (all permissions handled)');
+          }
+          
           // Match if IDs are equal, or if we have an active permission with unknown ID (undefined)
           // (This happens if permission.updated/asked received an event without permissionID)
           if (activePermissionId === repliedPermissionId || activePermissionId === undefined) {
@@ -391,6 +548,14 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           activePermissionId = null;
           seenUserMessageIds.clear();
           cancelAllPendingReminders();
+          
+          // Reset permission batch state
+          pendingPermissionBatch = [];
+          if (permissionBatchTimeout) {
+            clearTimeout(permissionBatchTimeout);
+            permissionBatchTimeout = null;
+          }
+          
           debugLog(`Session created: ${event.type} - reset all tracking state`);
         }
 
@@ -425,46 +590,48 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         }
 
         // ========================================
-        // NOTIFICATION 2: Permission Request
+        // NOTIFICATION 2: Permission Request (BATCHED)
         // ========================================
         // NOTE: OpenCode SDK v1.1.1+ changed permission events:
         //   - Old: "permission.updated" with properties.id
         //   - New: "permission.asked" with properties.id
         // We support both for backward compatibility.
+        //
+        // BATCHING: When multiple permissions arrive simultaneously (e.g., 5 at once),
+        // we batch them into a single notification instead of playing 5 overlapping sounds.
         if (event.type === "permission.updated" || event.type === "permission.asked") {
-          // CRITICAL: Capture permissionID IMMEDIATELY (before any async work)
-          // This prevents race condition where user responds before we finish notifying
-          // NOTE: Both old and new SDK use 'id' in the permission event properties
+          // Capture permissionID
           const permissionId = event.properties?.id;
           
           if (!permissionId) {
              debugLog(`${event.type}: permission ID missing. properties keys: ` + Object.keys(event.properties || {}).join(', '));
           }
 
-          activePermissionId = permissionId;
-          
-          debugLog(`${event.type}: notifying (permissionId=${permissionId})`);
-          await showToast("⚠️ Permission request requires your attention", "warning", 8000);
-
-          // CHECK: Did user already respond while we were showing toast?
-          if (activePermissionId !== permissionId) {
-            debugLog(`${event.type}: aborted - user already responded (activePermissionId cleared)`);
-            return;
+          // Add to the pending batch (avoid duplicates)
+          if (permissionId && !pendingPermissionBatch.includes(permissionId)) {
+            pendingPermissionBatch.push(permissionId);
+            debugLog(`${event.type}: added ${permissionId} to batch (now ${pendingPermissionBatch.length} pending)`);
+          } else if (!permissionId) {
+            // If no ID, still count it (use a placeholder)
+            pendingPermissionBatch.push(`unknown-${Date.now()}`);
+            debugLog(`${event.type}: added unknown permission to batch (now ${pendingPermissionBatch.length} pending)`);
           }
-
-          // Smart notification: sound first, TTS reminder later
-          await smartNotify('permission', {
-            soundFile: config.permissionSound,
-            soundLoops: 2,
-            ttsMessage: getRandomMessage(config.permissionTTSMessages),
-            fallbackSound: config.permissionSound
-          });
           
-          // Final check after smartNotify: if user responded during sound playback, cancel the scheduled reminder
-          if (activePermissionId !== permissionId) {
-            debugLog(`${event.type}: user responded during notification - cancelling any scheduled reminder`);
-            cancelPendingReminder('permission');
+          // Reset the batch window timer (debounce)
+          // This gives more permissions a chance to arrive before we notify
+          if (permissionBatchTimeout) {
+            clearTimeout(permissionBatchTimeout);
           }
+          
+          permissionBatchTimeout = setTimeout(async () => {
+            try {
+              await processPermissionBatch();
+            } catch (e) {
+              debugLog(`processPermissionBatch error: ${e.message}`);
+            }
+          }, PERMISSION_BATCH_WINDOW_MS);
+          
+          debugLog(`${event.type}: batch window reset (will process in ${PERMISSION_BATCH_WINDOW_MS}ms if no more arrive)`);
         }
       } catch (e) {
         debugLog(`event handler error: ${e.message}`);

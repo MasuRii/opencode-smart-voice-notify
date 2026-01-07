@@ -32,6 +32,7 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - Automatic cancellation when user responds
 - Per-notification type delays (permission requests are more urgent)
 - **Smart Quota Handling**: Automatically falls back to free Edge TTS if ElevenLabs quota is exceeded
+- **Permission Batching**: Multiple simultaneous permission requests are batched into a single notification (e.g., "5 permission requests require your attention")
 
 ### System Integration
 - **Native Edge TTS**: No external dependencies (Python/pip) required
@@ -86,6 +87,7 @@ When you first run OpenCode with this plugin installed, it will **automatically 
 
 1. **`~/.config/opencode/smart-voice-notify.jsonc`** - A comprehensive configuration file with all available options fully documented.
 2. **`~/.config/opencode/assets/*.mp3`** - Bundled notification sound files.
+3. **`~/.config/opencode/logs/`** - Debug log folder (created when debug logging is enabled).
 
 The auto-generated configuration includes all advanced settings, message arrays, and engine options, so you don't have to refer back to the documentation for available settings.
 
@@ -121,6 +123,12 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
     "enableFollowUpReminders": true,
     "maxFollowUpReminders": 3,              // Max number of follow-up TTS reminders
     "reminderBackoffMultiplier": 1.5,       // Each follow-up waits longer (30s, 45s, 67s...)
+    
+    // ============================================================
+    // PERMISSION BATCHING (Multiple permissions at once)
+    // ============================================================
+    // When multiple permissions arrive simultaneously, batch them into one notification
+    "permissionBatchWindowMs": 800,         // Batch window in milliseconds
 
     // ============================================================
     // TTS ENGINE SELECTION
@@ -174,6 +182,11 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
         "Excuse me! I need your authorization before I can continue.",
         "Permission required! Please review and approve when ready."
     ],
+    // Messages for MULTIPLE permission requests (use {count} placeholder)
+    "permissionTTSMessagesMultiple": [
+        "Attention please! There are {count} permission requests waiting for your approval.",
+        "Hey! {count} permissions need your approval to continue."
+    ],
 
     // ============================================================
     // TTS REMINDER MESSAGES (Used after delay if no response)
@@ -191,6 +204,11 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
         "Hello? I am waiting for your approval. This is getting urgent!",
         "Please check your screen! I really need your permission to move forward.",
         "Still waiting for authorization! The task is on hold until you respond."
+    ],
+    // Reminder messages for MULTIPLE permissions (use {count} placeholder)
+    "permissionReminderTTSMessagesMultiple": [
+        "Hey! I still need your approval for {count} permissions. Please respond!",
+        "Reminder: There are {count} pending permission requests."
     ],
     
     // ============================================================

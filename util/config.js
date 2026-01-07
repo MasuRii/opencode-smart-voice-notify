@@ -189,6 +189,16 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
         "Excuse me! I need your authorization before I can continue.",
         "Permission required! Please review and approve when ready."
     ], 4)},
+    
+    // Messages for MULTIPLE permission requests (use {count} placeholder)
+    // Used when several permissions arrive simultaneously
+    "permissionTTSMessagesMultiple": ${formatJSON(overrides.permissionTTSMessagesMultiple || [
+        "Attention please! There are {count} permission requests waiting for your approval.",
+        "Hey! {count} permissions need your approval to continue.",
+        "Heads up! You have {count} pending permission requests.",
+        "Excuse me! I need your authorization for {count} different actions.",
+        "{count} permissions required! Please review and approve when ready."
+    ], 4)},
 
     // ============================================================
     // TTS REMINDER MESSAGES (More urgent - used after delay if no response)
@@ -212,6 +222,24 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
         "Please check your screen! I really need your permission to move forward.",
         "Still waiting for authorization! The task is on hold until you respond."
     ], 4)},
+    
+    // Reminder messages for MULTIPLE permissions (use {count} placeholder)
+    "permissionReminderTTSMessagesMultiple": ${formatJSON(overrides.permissionReminderTTSMessagesMultiple || [
+        "Hey! I still need your approval for {count} permissions. Please respond!",
+        "Reminder: There are {count} pending permission requests. I cannot proceed without you.",
+        "Hello? I am waiting for your approval on {count} items. This is getting urgent!",
+        "Please check your screen! {count} permissions are waiting for your response.",
+        "Still waiting for authorization on {count} requests! The task is on hold."
+    ], 4)},
+    
+    // ============================================================
+    // PERMISSION BATCHING (Multiple permissions at once)
+    // ============================================================
+    // When multiple permissions arrive simultaneously, batch them into one notification
+    // This prevents overlapping sounds when 5+ permissions come at once
+    
+    // Batch window (ms) - how long to wait for more permissions before notifying
+    "permissionBatchWindowMs": ${overrides.permissionBatchWindowMs !== undefined ? overrides.permissionBatchWindowMs : 800},
     
     // ============================================================
     // SOUND FILES (For immediate notifications)
@@ -246,7 +274,8 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},
     
-    // Enable debug logging to ~/.config/opencode/smart-voice-notify-debug.log
+    // Enable debug logging to ~/.config/opencode/logs/smart-voice-notify-debug.log
+    // The logs folder is created automatically when debug logging is enabled
     // Useful for troubleshooting notification issues
     "debugLog": ${overrides.debugLog !== undefined ? overrides.debugLog : false}
 }`;

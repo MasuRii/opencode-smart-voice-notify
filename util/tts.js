@@ -71,6 +71,14 @@ export const getTTSConfig = () => {
       'Excuse me! I need your authorization before I can continue.',
       'Permission required! Please review and approve when ready.'
     ],
+    // Messages for MULTIPLE permission requests (use {count} placeholder)
+    permissionTTSMessagesMultiple: [
+      'Attention please! There are {count} permission requests waiting for your approval.',
+      'Hey! {count} permissions need your approval to continue.',
+      'Heads up! You have {count} pending permission requests.',
+      'Excuse me! I need your authorization for {count} different actions.',
+      '{count} permissions required! Please review and approve when ready.'
+    ],
     
     // ============================================================
     // TTS REMINDER MESSAGES (More urgent/personalized - used after delay)
@@ -91,6 +99,17 @@ export const getTTSConfig = () => {
       'Please check your screen! I really need your permission to move forward.',
       'Still waiting for authorization! The task is on hold until you respond.'
     ],
+    // Reminder messages for MULTIPLE permissions (use {count} placeholder)
+    permissionReminderTTSMessagesMultiple: [
+      'Hey! I still need your approval for {count} permissions. Please respond!',
+      'Reminder: There are {count} pending permission requests. I cannot proceed without you.',
+      'Hello? I am waiting for your approval on {count} items. This is getting urgent!',
+      'Please check your screen! {count} permissions are waiting for your response.',
+      'Still waiting for authorization on {count} requests! The task is on hold.'
+    ],
+    
+    // Permission batch window (ms) - how long to wait for more permissions before notifying
+    permissionBatchWindowMs: 800,
     
     // ============================================================
     // SOUND FILES (Used for immediate notifications)
@@ -120,7 +139,17 @@ let elevenLabsQuotaExceeded = false;
  */
 export const createTTS = ({ $, client }) => {
   const config = getTTSConfig();
-  const logFile = path.join(configDir, 'smart-voice-notify-debug.log');
+  const logsDir = path.join(configDir, 'logs');
+  const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
+  
+  // Ensure logs directory exists if debug logging is enabled
+  if (config.debugLog && !fs.existsSync(logsDir)) {
+    try {
+      fs.mkdirSync(logsDir, { recursive: true });
+    } catch (e) {
+      // Silently fail - logging is optional
+    }
+  }
 
   // Debug logging function (defined early so it can be passed to Linux platform)
   const debugLog = (message) => {

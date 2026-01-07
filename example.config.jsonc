@@ -45,6 +45,16 @@
     "reminderBackoffMultiplier": 1.5,       // Each follow-up waits longer (30s, 45s, 67s...)
 
     // ============================================================
+    // PERMISSION BATCHING (Multiple permissions at once)
+    // ============================================================
+    // When multiple permissions arrive simultaneously (e.g., 5 at once),
+    // batch them into a single notification instead of playing 5 overlapping sounds.
+    // The notification will say "X permission requests require your attention".
+    
+    // Batch window (ms) - how long to wait for more permissions before notifying
+    "permissionBatchWindowMs": 800,
+
+    // ============================================================
     // TTS ENGINE SELECTION
     // ============================================================
     // 'elevenlabs' - Best quality, anime-like voices (requires API key, free tier: 10k chars/month)
@@ -141,6 +151,16 @@
         "Excuse me! I need your authorization before I can continue.",
         "Permission required! Please review and approve when ready."
     ],
+    
+    // Messages for MULTIPLE permission requests (use {count} placeholder)
+    // Used when several permissions arrive simultaneously
+    "permissionTTSMessagesMultiple": [
+        "Attention please! There are {count} permission requests waiting for your approval.",
+        "Hey! {count} permissions need your approval to continue.",
+        "Heads up! You have {count} pending permission requests.",
+        "Excuse me! I need your authorization for {count} different actions.",
+        "{count} permissions required! Please review and approve when ready."
+    ],
 
     // ============================================================
     // TTS REMINDER MESSAGES (More urgent - used after delay if no response)
@@ -163,6 +183,15 @@
         "Hello? I am waiting for your approval. This is getting urgent!",
         "Please check your screen! I really need your permission to move forward.",
         "Still waiting for authorization! The task is on hold until you respond."
+    ],
+    
+    // Reminder messages for MULTIPLE permissions (use {count} placeholder)
+    "permissionReminderTTSMessagesMultiple": [
+        "Hey! I still need your approval for {count} permissions. Please respond!",
+        "Reminder: There are {count} pending permission requests. I cannot proceed without you.",
+        "Hello? I am waiting for your approval on {count} items. This is getting urgent!",
+        "Please check your screen! {count} permissions are waiting for your response.",
+        "Still waiting for authorization on {count} requests! The task is on hold."
     ],
     
     // ============================================================
@@ -198,7 +227,8 @@
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": 60,
     
-    // Enable debug logging to ~/.config/opencode/smart-voice-notify-debug.log
+    // Enable debug logging to ~/.config/opencode/logs/smart-voice-notify-debug.log
+    // The logs folder is created automatically when debug logging is enabled
     // Useful for troubleshooting notification issues
     "debugLog": false
 }
