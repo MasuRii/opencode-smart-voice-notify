@@ -251,6 +251,71 @@
     "questionBatchWindowMs": 800,
     
     // ============================================================
+    // AI MESSAGE GENERATION (OpenAI-Compatible Endpoints)
+    // ============================================================
+    // Use a local/self-hosted AI to generate dynamic notification messages
+    // instead of using preset static messages. The AI generates the text,
+    // which is then spoken by your configured TTS engine (ElevenLabs, Edge, etc.)
+    //
+    // Supports: Ollama, LM Studio, LocalAI, vLLM, llama.cpp, Jan.ai, and any
+    // OpenAI-compatible endpoint. You provide your own endpoint URL and API key.
+    //
+    // HOW IT WORKS:
+    //   1. When a notification is triggered (task complete, permission needed, etc.)
+    //   2. If AI is enabled, the plugin sends a prompt to your AI server
+    //   3. The AI generates a unique, contextual notification message
+    //   4. That message is spoken by your TTS engine (ElevenLabs, Edge, SAPI)
+    //   5. If AI fails, it falls back to the static messages defined above
+    
+    // Enable AI-generated messages (experimental feature)
+    // Default: false (uses static messages defined above)
+    "enableAIMessages": false,
+    
+    // Your AI server endpoint URL
+    // Common local AI servers and their default endpoints:
+    //   Ollama:         http://localhost:11434/v1
+    //   LM Studio:      http://localhost:1234/v1
+    //   LocalAI:        http://localhost:8080/v1
+    //   vLLM:           http://localhost:8000/v1
+    //   llama.cpp:      http://localhost:8080/v1
+    //   Jan.ai:         http://localhost:1337/v1
+    //   text-gen-webui: http://localhost:5000/v1
+    "aiEndpoint": "http://localhost:11434/v1",
+    
+    // Model name to use (must match a model loaded in your AI server)
+    // Examples for Ollama: "llama3", "llama3.2", "mistral", "phi3", "gemma2", "qwen2"
+    // For LM Studio: Use the model name shown in the UI
+    "aiModel": "llama3",
+    
+    // API key for your AI server
+    // Most local servers (Ollama, LM Studio, LocalAI) don't require a key - leave empty
+    // Only set this if your server requires authentication
+    // For vLLM with auth disabled, use "EMPTY"
+    "aiApiKey": "",
+    
+    // Request timeout in milliseconds
+    // Local AI can be slow on first request (model loading), so 15 seconds is recommended
+    // Increase if you have a slower machine or larger models
+    "aiTimeout": 15000,
+    
+    // Fall back to static messages (defined above) if AI generation fails
+    // Recommended: true - ensures notifications always work even if AI is down
+    "aiFallbackToStatic": true,
+    
+    // Custom prompts for each notification type
+    // You can customize these to change the AI's personality/style
+    // The AI will generate a short message based on these prompts
+    // TIP: Keep prompts concise - they're sent with each notification
+    "aiPrompts": {
+        "idle": "Generate a single brief, friendly notification sentence (max 15 words) saying a coding task is complete. Be encouraging and warm. Output only the message, no quotes.",
+        "permission": "Generate a single brief, urgent but friendly notification sentence (max 15 words) asking the user to approve a permission request. Output only the message, no quotes.",
+        "question": "Generate a single brief, polite notification sentence (max 15 words) saying the assistant has a question and needs user input. Output only the message, no quotes.",
+        "idleReminder": "Generate a single brief, gentle reminder sentence (max 15 words) that a completed task is waiting for review. Be slightly more insistent. Output only the message, no quotes.",
+        "permissionReminder": "Generate a single brief, urgent reminder sentence (max 15 words) that permission approval is still needed. Convey importance. Output only the message, no quotes.",
+        "questionReminder": "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes."
+    },
+    
+    // ============================================================
     // SOUND FILES (For immediate notifications)
     // These are played first before TTS reminder kicks in
     // ============================================================

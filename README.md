@@ -35,6 +35,13 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - **Permission Batching**: Multiple simultaneous permission requests are batched into a single notification (e.g., "5 permission requests require your attention")
 - **Question Tool Support** (SDK v1.1.7+): Notifies when the agent asks questions and needs user input
 
+### AI-Generated Messages (Experimental)
+- **Dynamic notifications**: Use a local AI to generate unique, contextual messages instead of preset static ones
+- **OpenAI-compatible**: Works with Ollama, LM Studio, LocalAI, vLLM, llama.cpp, Jan.ai, or any OpenAI-compatible endpoint
+- **User-hosted**: You provide your own AI endpoint - no cloud API keys required
+- **Custom prompts**: Configure prompts per notification type for full control over AI personality
+- **Smart fallback**: Automatically falls back to static messages if AI is unavailable
+
 ### System Integration
 - **Native Edge TTS**: No external dependencies (Python/pip) required
 - Wake monitor from sleep before notifying
@@ -384,6 +391,38 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
 ```
 
 See `example.config.jsonc` for more details.
+
+### AI Message Generation (Optional)
+
+If you want dynamic, AI-generated notification messages instead of preset ones, you can connect to a local AI server:
+
+1. **Install a local AI server** (e.g., [Ollama](https://ollama.ai)):
+   ```bash
+   # Install Ollama and pull a model
+   ollama pull llama3
+   ```
+
+2. **Enable AI messages in your config**:
+   ```jsonc
+   {
+     "enableAIMessages": true,
+     "aiEndpoint": "http://localhost:11434/v1",
+     "aiModel": "llama3",
+     "aiApiKey": "",
+     "aiFallbackToStatic": true
+   }
+   ```
+
+3. **The AI will generate unique messages** for each notification, which are then spoken by your TTS engine.
+
+**Supported AI Servers:**
+| Server | Default Endpoint | API Key |
+|--------|-----------------|---------|
+| Ollama | `http://localhost:11434/v1` | Not needed |
+| LM Studio | `http://localhost:1234/v1` | Not needed |
+| LocalAI | `http://localhost:8080/v1` | Not needed |
+| vLLM | `http://localhost:8000/v1` | Use "EMPTY" |
+| Jan.ai | `http://localhost:1337/v1` | Required |
 
 ## Requirements
 
