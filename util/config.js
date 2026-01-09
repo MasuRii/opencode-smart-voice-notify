@@ -298,6 +298,54 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     "questionBatchWindowMs": ${overrides.questionBatchWindowMs !== undefined ? overrides.questionBatchWindowMs : 800},
     
     // ============================================================
+    // AI MESSAGE GENERATION (OpenAI-Compatible Endpoints)
+    // ============================================================
+    // Use a local/self-hosted AI to generate dynamic notification messages
+    // instead of using preset static messages. The AI generates the text,
+    // which is then spoken by your configured TTS engine (ElevenLabs, Edge, etc.)
+    //
+    // Supports: Ollama, LM Studio, LocalAI, vLLM, llama.cpp, Jan.ai, and any
+    // OpenAI-compatible endpoint. You provide your own endpoint URL and API key.
+    
+    // Enable AI-generated messages (experimental feature)
+    "enableAIMessages": ${overrides.enableAIMessages !== undefined ? overrides.enableAIMessages : false},
+    
+    // Your AI server endpoint URL (e.g., Ollama: http://localhost:11434/v1)
+    // Common endpoints:
+    //   Ollama:    http://localhost:11434/v1
+    //   LM Studio: http://localhost:1234/v1
+    //   LocalAI:   http://localhost:8080/v1
+    //   vLLM:      http://localhost:8000/v1
+    //   Jan.ai:    http://localhost:1337/v1
+    "aiEndpoint": "${overrides.aiEndpoint || 'http://localhost:11434/v1'}",
+    
+    // Model name to use (depends on what's loaded in your AI server)
+    // Examples: "llama3", "mistral", "phi3", "gemma2", "qwen2"
+    "aiModel": "${overrides.aiModel || 'llama3'}",
+    
+    // API key for your AI server (leave empty for Ollama/LM Studio/LocalAI)
+    // Only needed if your server requires authentication
+    "aiApiKey": "${overrides.aiApiKey || ''}",
+    
+    // Request timeout in milliseconds (local AI can be slow on first request)
+    "aiTimeout": ${overrides.aiTimeout !== undefined ? overrides.aiTimeout : 15000},
+    
+    // Fallback to static preset messages if AI generation fails
+    "aiFallbackToStatic": ${overrides.aiFallbackToStatic !== undefined ? overrides.aiFallbackToStatic : true},
+    
+    // Custom prompts for each notification type
+    // The AI will generate a short message based on these prompts
+    // Keep prompts concise - they're sent with each notification
+    "aiPrompts": ${formatJSON(overrides.aiPrompts || {
+        "idle": "Generate a single brief, friendly notification sentence (max 15 words) saying a coding task is complete. Be encouraging and warm. Output only the message, no quotes.",
+        "permission": "Generate a single brief, urgent but friendly notification sentence (max 15 words) asking the user to approve a permission request. Output only the message, no quotes.",
+        "question": "Generate a single brief, polite notification sentence (max 15 words) saying the assistant has a question and needs user input. Output only the message, no quotes.",
+        "idleReminder": "Generate a single brief, gentle reminder sentence (max 15 words) that a completed task is waiting for review. Be slightly more insistent. Output only the message, no quotes.",
+        "permissionReminder": "Generate a single brief, urgent reminder sentence (max 15 words) that permission approval is still needed. Convey importance. Output only the message, no quotes.",
+        "questionReminder": "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes."
+    }, 4)},
+    
+    // ============================================================
     // SOUND FILES (For immediate notifications)
     // These are played first before TTS reminder kicks in
     // ============================================================
