@@ -4,6 +4,26 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 
 /**
+ * Debug logging to file (no console output).
+ * Logs are written to ~/.config/opencode/logs/smart-voice-notify-debug.log
+ * @param {string} message - Message to log
+ * @param {string} configDir - Config directory path
+ */
+const debugLogToFile = (message, configDir) => {
+  try {
+    const logsDir = path.join(configDir, 'logs');
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
+    const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] [config] ${message}\n`);
+  } catch (e) {
+    // Silently fail - logging should never break the plugin
+  }
+};
+
+/**
  * Basic JSONC parser that strips single-line and multi-line comments.
  * @param {string} jsonc 
  * @returns {any}
@@ -22,6 +42,207 @@ const parseJSONC = (jsonc) => {
 const formatJSON = (val, indent = 0) => {
   const json = JSON.stringify(val, null, 4);
   return indent > 0 ? json.replace(/\n/g, '\n' + ' '.repeat(indent)) : json;
+};
+
+/**
+ * Deep merge two objects. User values take precedence over defaults.
+ * - For objects: recursively merge, adding new keys from defaults
+ * - For arrays: user's array completely replaces default (no merge)
+ * - For primitives: user's value takes precedence if it exists
+ * 
+ * @param {object} defaults - The default configuration object
+ * @param {object} user - The user's existing configuration object
+ * @returns {object} Merged configuration with user values preserved
+ */
+const deepMerge = (defaults, user) => {
+  // If user value doesn't exist, use default
+  if (user === undefined || user === null) {
+    return defaults;
+  }
+  
+  // If either is not an object (or is array), user value wins
+  if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {
+    return user;
+  }
+  if (typeof user !== 'object' || user === null || Array.isArray(user)) {
+    return user;
+  }
+  
+  // Both are objects - merge them
+  const result = { ...user };
+  
+  for (const key of Object.keys(defaults)) {
+    if (!(key in user)) {
+      // Key doesn't exist in user config - add it from defaults
+      result[key] = defaults[key];
+    } else if (typeof defaults[key] === 'object' && defaults[key] !== null && !Array.isArray(defaults[key])) {
+      // Both have this key and it's an object - recurse
+      result[key] = deepMerge(defaults[key], user[key]);
+    }
+    // else: user has this key and it's not an object to merge - keep user's value
+  }
+  
+  return result;
+};
+
+/**
+ * Get the default configuration object.
+ * This is the source of truth for all default values.
+ * @returns {object} Default configuration object
+ */
+const getDefaultConfigObject = () => ({
+  _configVersion: null, // Will be set by caller
+  enabled: true,
+  notificationMode: 'sound-first',
+  enableTTSReminder: true,
+  ttsReminderDelaySeconds: 30,
+  idleReminderDelaySeconds: 30,
+  permissionReminderDelaySeconds: 20,
+  enableFollowUpReminders: true,
+  maxFollowUpReminders: 3,
+  reminderBackoffMultiplier: 1.5,
+  ttsEngine: 'elevenlabs',
+  enableTTS: true,
+  // elevenLabsApiKey is intentionally omitted - users must set it
+  elevenLabsVoiceId: 'cgSgspJ2msm6clMCkdW9',
+  elevenLabsModel: 'eleven_turbo_v2_5',
+  elevenLabsStability: 0.5,
+  elevenLabsSimilarity: 0.75,
+  elevenLabsStyle: 0.5,
+  edgeVoice: 'en-US-JennyNeural',
+  edgePitch: '+0Hz',
+  edgeRate: '+10%',
+  sapiVoice: 'Microsoft Zira Desktop',
+  sapiRate: -1,
+  sapiPitch: 'medium',
+  sapiVolume: 'loud',
+  idleTTSMessages: [
+    "All done! Your task has been completed successfully.",
+    "Hey there! I finished working on your request.",
+    "Task complete! Ready for your review whenever you are.",
+    "Good news! Everything is done and ready for you.",
+    "Finished! Let me know if you need anything else."
+  ],
+  permissionTTSMessages: [
+    "Attention please! I need your permission to continue.",
+    "Hey! Quick approval needed to proceed with the task.",
+    "Heads up! There is a permission request waiting for you.",
+    "Excuse me! I need your authorization before I can continue.",
+    "Permission required! Please review and approve when ready."
+  ],
+  permissionTTSMessagesMultiple: [
+    "Attention please! There are {count} permission requests waiting for your approval.",
+    "Hey! {count} permissions need your approval to continue.",
+    "Heads up! You have {count} pending permission requests.",
+    "Excuse me! I need your authorization for {count} different actions.",
+    "{count} permissions required! Please review and approve when ready."
+  ],
+  idleReminderTTSMessages: [
+    "Hey, are you still there? Your task has been waiting for review.",
+    "Just a gentle reminder - I finished your request a while ago!",
+    "Hello? I completed your task. Please take a look when you can.",
+    "Still waiting for you! The work is done and ready for review.",
+    "Knock knock! Your completed task is patiently waiting for you."
+  ],
+  permissionReminderTTSMessages: [
+    "Hey! I still need your permission to continue. Please respond!",
+    "Reminder: There is a pending permission request. I cannot proceed without you.",
+    "Hello? I am waiting for your approval. This is getting urgent!",
+    "Please check your screen! I really need your permission to move forward.",
+    "Still waiting for authorization! The task is on hold until you respond."
+  ],
+  permissionReminderTTSMessagesMultiple: [
+    "Hey! I still need your approval for {count} permissions. Please respond!",
+    "Reminder: There are {count} pending permission requests. I cannot proceed without you.",
+    "Hello? I am waiting for your approval on {count} items. This is getting urgent!",
+    "Please check your screen! {count} permissions are waiting for your response.",
+    "Still waiting for authorization on {count} requests! The task is on hold."
+  ],
+  permissionBatchWindowMs: 800,
+  questionTTSMessages: [
+    "Hey! I have a question for you. Please check your screen.",
+    "Attention! I need your input to continue.",
+    "Quick question! Please take a look when you have a moment.",
+    "I need some clarification. Could you please respond?",
+    "Question time! Your input is needed to proceed."
+  ],
+  questionTTSMessagesMultiple: [
+    "Hey! I have {count} questions for you. Please check your screen.",
+    "Attention! I need your input on {count} items to continue.",
+    "{count} questions need your attention. Please take a look!",
+    "I need some clarifications. There are {count} questions waiting for you.",
+    "Question time! {count} questions need your response to proceed."
+  ],
+  questionReminderTTSMessages: [
+    "Hey! I am still waiting for your answer. Please check the questions!",
+    "Reminder: There is a question waiting for your response.",
+    "Hello? I need your input to continue. Please respond when you can.",
+    "Still waiting for your answer! The task is on hold.",
+    "Your input is needed! Please check the pending question."
+  ],
+  questionReminderTTSMessagesMultiple: [
+    "Hey! I am still waiting for answers to {count} questions. Please respond!",
+    "Reminder: There are {count} questions waiting for your response.",
+    "Hello? I need your input on {count} items. Please respond when you can.",
+    "Still waiting for your answers on {count} questions! The task is on hold.",
+    "Your input is needed! {count} questions are pending your response."
+  ],
+  questionReminderDelaySeconds: 25,
+  questionBatchWindowMs: 800,
+  enableAIMessages: false,
+  aiEndpoint: 'http://localhost:11434/v1',
+  aiModel: 'llama3',
+  aiApiKey: '',
+  aiTimeout: 15000,
+  aiFallbackToStatic: true,
+  aiPrompts: {
+    idle: "Generate a single brief, friendly notification sentence (max 15 words) saying a coding task is complete. Be encouraging and warm. Output only the message, no quotes.",
+    permission: "Generate a single brief, urgent but friendly notification sentence (max 15 words) asking the user to approve a permission request. Output only the message, no quotes.",
+    question: "Generate a single brief, polite notification sentence (max 15 words) saying the assistant has a question and needs user input. Output only the message, no quotes.",
+    idleReminder: "Generate a single brief, gentle reminder sentence (max 15 words) that a completed task is waiting for review. Be slightly more insistent. Output only the message, no quotes.",
+    permissionReminder: "Generate a single brief, urgent reminder sentence (max 15 words) that permission approval is still needed. Convey importance. Output only the message, no quotes.",
+    questionReminder: "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes."
+  },
+  idleSound: 'assets/Soft-high-tech-notification-sound-effect.mp3',
+  permissionSound: 'assets/Machine-alert-beep-sound-effect.mp3',
+  questionSound: 'assets/Machine-alert-beep-sound-effect.mp3',
+  wakeMonitor: true,
+  forceVolume: true,
+  volumeThreshold: 50,
+  enableToast: true,
+  enableSound: true,
+  idleThresholdSeconds: 60,
+  debugLog: false
+});
+
+/**
+ * Find new fields that exist in defaults but not in user config.
+ * Used for logging what was added during migration.
+ * @param {object} defaults 
+ * @param {object} user 
+ * @param {string} prefix 
+ * @returns {string[]} Array of field paths that were added
+ */
+const findNewFields = (defaults, user, prefix = '') => {
+  const newFields = [];
+  
+  if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {
+    return newFields;
+  }
+  
+  for (const key of Object.keys(defaults)) {
+    const fieldPath = prefix ? `${prefix}.${key}` : key;
+    
+    if (!(key in user)) {
+      newFields.push(fieldPath);
+    } else if (typeof defaults[key] === 'object' && defaults[key] !== null && !Array.isArray(defaults[key])) {
+      if (typeof user[key] === 'object' && user[key] !== null && !Array.isArray(user[key])) {
+        newFields.push(...findNewFields(defaults[key], user[key], fieldPath));
+      }
+    }
+  }
+  
+  return newFields;
 };
 
 /**
@@ -424,8 +645,11 @@ const copyBundledAssets = (configDir) => {
 
 /**
  * Loads a configuration file from the OpenCode config directory.
- * If the file doesn't exist, creates a default config file.
- * Performs version checks and migrates config if necessary.
+ * If the file doesn't exist, creates a default config file with full documentation.
+ * If the file exists, performs smart merging to add new fields without overwriting user values.
+ * 
+ * IMPORTANT: User values are NEVER overwritten. Only new fields from plugin updates are added.
+ * 
  * @param {string} name - Name of the config file (without .jsonc extension)
  * @param {object} defaults - Default values if file doesn't exist or is invalid
  * @returns {object}
@@ -439,45 +663,78 @@ export const loadConfig = (name, defaults = {}) => {
   const pkg = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf-8'));
   const currentVersion = pkg.version;
 
+  // Always ensure bundled assets are present
+  copyBundledAssets(configDir);
+
+  // Try to load existing config
   let existingConfig = null;
   if (fs.existsSync(filePath)) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       existingConfig = parseJSONC(content);
     } catch (error) {
-      // If file is invalid JSONC, we'll treat it as missing and overwrite
+      // If file is invalid JSONC, we'll create a fresh one
+      debugLogToFile(`Config file was invalid (${error.message}), creating fresh config`, configDir);
     }
   }
 
-  // Version check and migration logic
-  if (!existingConfig || existingConfig._configVersion !== currentVersion) {
+  // Get default config object with current version
+  const defaultConfig = getDefaultConfigObject();
+  defaultConfig._configVersion = currentVersion;
+
+  // CASE 1: No existing config - create new file with full documentation
+  if (!existingConfig) {
     try {
       // Ensure config directory exists
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
 
-      // Generate new config content using existing values as overrides
-      // This preserves user settings while updating comments and adding new fields
-      const newConfigContent = generateDefaultConfig(existingConfig || {}, currentVersion);
+      // Generate new config file with all documentation comments
+      const newConfigContent = generateDefaultConfig({}, currentVersion);
       fs.writeFileSync(filePath, newConfigContent, 'utf-8');
 
-      // Also ensure all bundled assets (sound files) are present in the config directory
-      copyBundledAssets(configDir);
+      debugLogToFile(`Initialized default config at ${filePath}`, configDir);
 
-      if (existingConfig) {
-        console.log(`[Smart Voice Notify] Config migrated to version ${currentVersion}`);
-      } else {
-        console.log(`[Smart Voice Notify] Initialized default config at ${filePath}`);
-      }
-
-      // Re-parse the newly written config
-      existingConfig = parseJSONC(newConfigContent);
+      // Return the default config merged with any passed defaults
+      return { ...defaults, ...defaultConfig };
     } catch (error) {
-      // If migration fails, try to return whatever we have or defaults
-      return existingConfig || defaults;
+      // If creation fails, return defaults
+      return { ...defaults, ...defaultConfig };
     }
   }
 
-  return { ...defaults, ...existingConfig };
+  // CASE 2: Existing config - smart merge to add new fields only
+  // Find what new fields need to be added (for logging)
+  const newFields = findNewFields(defaultConfig, existingConfig);
+  
+  // Deep merge: user values preserved, only new fields added from defaults
+  const mergedConfig = deepMerge(defaultConfig, existingConfig);
+  
+  // Update version in merged config
+  mergedConfig._configVersion = currentVersion;
+
+  // Only write back if there are new fields to add OR version changed
+  const versionChanged = existingConfig._configVersion !== currentVersion;
+  
+  if (newFields.length > 0 || versionChanged) {
+    try {
+      // Regenerate the config file with full documentation comments
+      // Pass the merged config so user values are preserved in the output
+      const newConfigContent = generateDefaultConfig(mergedConfig, currentVersion);
+      fs.writeFileSync(filePath, newConfigContent, 'utf-8');
+
+      if (newFields.length > 0) {
+        debugLogToFile(`Added ${newFields.length} new config field(s): ${newFields.join(', ')}`, configDir);
+      }
+      if (versionChanged) {
+        debugLogToFile(`Config version updated to ${currentVersion}`, configDir);
+      }
+    } catch (error) {
+      // If write fails, still return the merged config (just won't persist new fields)
+      debugLogToFile(`Warning: Could not update config file: ${error.message}`, configDir);
+    }
+  }
+
+  return { ...defaults, ...mergedConfig };
 };
