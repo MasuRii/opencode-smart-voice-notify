@@ -1,7 +1,7 @@
 {
   "name": "opencode-smart-voice-notify",
-  "version": "1.2.2",
-  "description": "Smart voice notification plugin for OpenCode with multiple TTS engines (ElevenLabs, Edge TTS, Windows SAPI) and intelligent reminder system",
+  "version": "1.2.3",
+  "description": "Smart voice notification plugin for OpenCode with multiple TTS engines (ElevenLabs, Edge TTS, Windows SAPI), AI-generated dynamic messages, and intelligent reminder system",
   "main": "index.js",
   "type": "module",
   "author": "MasuRii",
@@ -18,7 +18,11 @@
     "sapi",
     "voice",
     "alert",
-    "smart"
+    "smart",
+    "ai",
+    "ai-generated",
+    "ollama",
+    "local-ai"
   ],
   "files": [
     "index.js",
@@ -39,10 +43,10 @@
     "bun": ">=1.0.0"
   },
   "dependencies": {
-    "@elevenlabs/elevenlabs-js": "^2.29.0",
+    "@elevenlabs/elevenlabs-js": "^2.30.0",
     "msedge-tts": "^2.0.3"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.1.4"
+    "@opencode-ai/plugin": "^1.1.8"
   }
 }
