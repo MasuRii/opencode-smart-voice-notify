@@ -29,6 +29,14 @@ export const getTTSConfig = () => {
     sapiPitch: 'medium',
     sapiVolume: 'loud',
     
+    // OpenAI-compatible TTS settings
+    openaiTtsEndpoint: '',
+    openaiTtsApiKey: '',
+    openaiTtsModel: 'tts-1',
+    openaiTtsVoice: 'alloy',
+    openaiTtsFormat: 'mp3',
+    openaiTtsSpeed: 1.0,
+    
     // ============================================================
     // NOTIFICATION MODE & TTS REMINDER SETTINGS
     // ============================================================
@@ -415,6 +423,64 @@ ${ssml}
   };
 
   /**
+   * OpenAI-Compatible TTS Engine (Kokoro, OpenAI, LocalAI, etc.)
+   * Calls /v1/audio/speech endpoint with configurable base URL
+   */
+  const speakWithOpenAI = async (text) => {
+    if (!config.openaiTtsEndpoint) {
+      debugLog('speakWithOpenAI: No endpoint configured');
+      return false;
+    }
+
+    try {
+      const endpoint = config.openaiTtsEndpoint.replace(/\/$/, '');
+      const url = `${endpoint}/v1/audio/speech`;
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add auth header if API key is provided
+      if (config.openaiTtsApiKey) {
+        headers['Authorization'] = `Bearer ${config.openaiTtsApiKey}`;
+      }
+
+      const body = {
+        model: config.openaiTtsModel || 'tts-1',
+        input: text,
+        voice: config.openaiTtsVoice || 'alloy',
+        response_format: config.openaiTtsFormat || 'mp3',
+        speed: config.openaiTtsSpeed ?? 1.0,
+      };
+
+      debugLog(`speakWithOpenAI: Calling ${url} with voice=${body.voice}, model=${body.model}`);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        debugLog(`speakWithOpenAI: API error ${response.status}: ${errorText}`);
+        return false;
+      }
+
+      const audioBuffer = await response.arrayBuffer();
+      const tempFile = path.join(os.tmpdir(), `opencode-tts-openai-${Date.now()}.mp3`);
+      fs.writeFileSync(tempFile, Buffer.from(audioBuffer));
+
+      await playAudioFile(tempFile);
+      try { fs.unlinkSync(tempFile); } catch (e) {}
+      return true;
+    } catch (e) {
+      debugLog(`speakWithOpenAI error: ${e.message}`);
+      return false;
+    }
+  };
+
+  /**
    * Get the current system idle time in seconds.
    */
   const getSystemIdleSeconds = async () => {
@@ -557,7 +623,11 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
       let success = false;
       const engine = activeConfig.ttsEngine || 'elevenlabs';
       
-      if (engine === 'elevenlabs') {
+      if (engine === 'openai') {
+        success = await speakWithOpenAI(message);
+        if (!success) success = await speakWithEdgeTTS(message);
+        if (!success) success = await speakWithSAPI(message);
+      } else if (engine === 'elevenlabs') {
         success = await speakWithElevenLabs(message);
         if (!success) success = await speakWithEdgeTTS(message);
         if (!success) success = await speakWithSAPI(message);

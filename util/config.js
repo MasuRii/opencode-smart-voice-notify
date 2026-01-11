@@ -116,6 +116,12 @@ const getDefaultConfigObject = () => ({
   sapiRate: -1,
   sapiPitch: 'medium',
   sapiVolume: 'loud',
+  openaiTtsEndpoint: '',
+  openaiTtsApiKey: '',
+  openaiTtsModel: 'tts-1',
+  openaiTtsVoice: 'alloy',
+  openaiTtsFormat: 'mp3',
+  openaiTtsSpeed: 1.0,
   idleTTSMessages: [
     "All done! Your task has been completed successfully.",
     "Hey there! I finished working on your request.",
@@ -394,6 +400,37 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     
     // Volume: 'silent', 'x-soft', 'soft', 'medium', 'loud', 'x-loud'
     "sapiVolume": "${overrides.sapiVolume || 'loud'}",
+    
+    // ============================================================
+    // OPENAI-COMPATIBLE TTS SETTINGS (Kokoro, LocalAI, OpenAI, etc.)
+    // ============================================================
+    // Any OpenAI-compatible /v1/audio/speech endpoint.
+    // Examples: Kokoro, OpenAI, LocalAI, Coqui, AllTalk, etc.
+    //
+    // To use OpenAI-compatible TTS:
+    // 1. Set ttsEngine above to "openai"
+    // 2. Set openaiTtsEndpoint to your server URL (without /v1/audio/speech)
+    // 3. Configure voice and model for your server
+    
+    // Base URL for your TTS server (e.g., "http://192.168.86.43:8880")
+    "openaiTtsEndpoint": "${overrides.openaiTtsEndpoint || ''}",
+    
+    // API key (leave empty if your server doesn't require auth)
+    "openaiTtsApiKey": "${overrides.openaiTtsApiKey || ''}",
+    
+    // Model name (server-dependent, e.g., "tts-1", "kokoro", "xtts")
+    "openaiTtsModel": "${overrides.openaiTtsModel || 'tts-1'}",
+    
+    // Voice name (server-dependent)
+    // Kokoro voices: "af_heart", "af_bella", "am_adam", etc.
+    // OpenAI voices: "alloy", "echo", "fable", "onyx", "nova", "shimmer"
+    "openaiTtsVoice": "${overrides.openaiTtsVoice || 'alloy'}",
+    
+    // Audio format: "mp3", "opus", "aac", "flac", "wav", "pcm"
+    "openaiTtsFormat": "${overrides.openaiTtsFormat || 'mp3'}",
+    
+    // Speech speed: 0.25 to 4.0 (1.0 = normal)
+    "openaiTtsSpeed": ${overrides.openaiTtsSpeed !== undefined ? overrides.openaiTtsSpeed : 1.0},
     
     // ============================================================
     // INITIAL TTS MESSAGES (Used immediately or after sound)
