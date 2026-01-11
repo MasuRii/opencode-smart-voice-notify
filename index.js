@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createTTS, getTTSConfig } from './util/tts.js';
-import { getSmartMessage } from './util/ai-messages.js';
+import { getSmartMessage, getAIFailureInfo, markAIFailureToastShown, resetAIFailureState } from './util/ai-messages.js';
 
 /**
  * OpenCode Smart Voice Notify Plugin
@@ -110,6 +110,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
   // before async notification code runs. Set on question.asked, cleared on question.replied/rejected.
   let activeQuestionId = null;
 
+  // ========================================
+  // AI FAILURE TOAST TRACKING
+  // Show a one-time toast when AI message generation fails
+  // ========================================
+  let aiFailureToastShown = false;
+
   /**
    * Write debug message to log file
    */
@@ -147,6 +153,36 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         });
       }
     } catch (e) {}
+  };
+
+  /**
+   * Check if AI failed and show a one-time toast notification.
+   * This helps users understand why AI messages aren't working.
+   */
+  const checkAndShowAIFailureToast = async () => {
+    // Only show once per session
+    if (aiFailureToastShown) return;
+    
+    // Only relevant if AI is enabled
+    if (!config.enableAIMessages) return;
+    
+    const { hasFailed, reason } = getAIFailureInfo();
+    if (hasFailed) {
+      aiFailureToastShown = true;
+      markAIFailureToastShown();
+      
+      // Create a user-friendly message
+      let toastMessage = '⚠️ AI message generation failed';
+      if (reason) {
+        // Truncate reason if too long
+        const shortReason = reason.length > 60 ? reason.slice(0, 60) + '...' : reason;
+        toastMessage += `: ${shortReason}`;
+      }
+      toastMessage += '. Using static messages.';
+      
+      debugLog(`AI failure toast shown: ${reason}`);
+      await showToast(toastMessage, 'warning', 10000);
+    }
   };
 
   /**
@@ -531,18 +567,17 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
-    // Step 4: Generate AI message for reminder AFTER sound played
-    const reminderMessage = await getPermissionMessage(batchCount, true);
-    
-    // Step 5: Schedule TTS reminder if enabled
-    if (config.enableTTSReminder && reminderMessage) {
-      scheduleTTSReminder('permission', reminderMessage, {
+    // Step 4: Schedule TTS reminder if enabled
+    // Note: scheduleTTSReminder generates its own AI message when the reminder fires,
+    // so we don't pre-generate here (that would cause duplicate AI calls)
+    if (config.enableTTSReminder) {
+      scheduleTTSReminder('permission', null, {
         fallbackSound: config.permissionSound,
         permissionCount: batchCount
       });
     }
     
-    // Step 6: If TTS-first or both mode, generate and speak immediate message
+    // Step 5: If TTS-first or both mode, generate and speak immediate message
     if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
       const ttsMessage = await getPermissionMessage(batchCount, false);
       await tts.wakeMonitor();
@@ -558,6 +593,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       debugLog('processPermissionBatch: user responded during notification - cancelling reminder');
       cancelPendingReminder('permission');
     }
+    
+    // Check if AI failed and show one-time toast
+    await checkAndShowAIFailureToast();
   };
 
   /**
@@ -609,18 +647,17 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
-    // Step 4: Generate AI message for reminder AFTER sound played
-    const reminderMessage = await getQuestionMessage(totalQuestionCount, true);
-
-    // Step 5: Schedule TTS reminder if enabled
-    if (config.enableTTSReminder && reminderMessage) {
-      scheduleTTSReminder('question', reminderMessage, {
+    // Step 4: Schedule TTS reminder if enabled
+    // Note: scheduleTTSReminder generates its own AI message when the reminder fires,
+    // so we don't pre-generate here (that would cause duplicate AI calls)
+    if (config.enableTTSReminder) {
+      scheduleTTSReminder('question', null, {
         fallbackSound: config.questionSound,
         questionCount: totalQuestionCount
       });
     }
     
-    // Step 6: If TTS-first or both mode, generate and speak immediate message
+    // Step 5: If TTS-first or both mode, generate and speak immediate message
     if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
       const ttsMessage = await getQuestionMessage(totalQuestionCount, false);
       await tts.wakeMonitor();
@@ -636,6 +673,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       debugLog('processQuestionBatch: user responded during notification - cancelling reminder');
       cancelPendingReminder('question');
     }
+    
+    // Check if AI failed and show one-time toast
+    await checkAndShowAIFailureToast();
   };
 
   return {
@@ -756,6 +796,10 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
             questionBatchTimeout = null;
           }
           
+          // Reset AI failure toast state for new session
+          aiFailureToastShown = false;
+          resetAIFailureState();
+          
           debugLog(`Session created: ${event.type} - reset all tracking state`);
         }
 
@@ -797,17 +841,16 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
             return;
           }
 
-          // Step 4: Generate AI message for reminder AFTER sound played
-          const reminderMessage = await getSmartMessage('idle', true, config.idleReminderTTSMessages);
-
-          // Step 5: Schedule TTS reminder if enabled
-          if (config.enableTTSReminder && reminderMessage) {
-            scheduleTTSReminder('idle', reminderMessage, {
+          // Step 4: Schedule TTS reminder if enabled
+          // Note: scheduleTTSReminder generates its own AI message when the reminder fires,
+          // so we don't pre-generate here (that would cause duplicate AI calls)
+          if (config.enableTTSReminder) {
+            scheduleTTSReminder('idle', null, {
               fallbackSound: config.idleSound
             });
           }
           
-          // Step 6: If TTS-first or both mode, generate and speak immediate message
+          // Step 5: If TTS-first or both mode, generate and speak immediate message
           if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
             const ttsMessage = await getSmartMessage('idle', false, config.idleTTSMessages);
             await tts.wakeMonitor();
@@ -817,6 +860,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
               fallbackSound: config.idleSound
             });
           }
+          
+          // Step 6: Check if AI failed and show one-time toast
+          await checkAndShowAIFailureToast();
         }
 
         // ========================================
