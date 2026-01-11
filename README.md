@@ -15,10 +15,11 @@ A smart voice notification plugin for [OpenCode](https://opencode.ai) with **mul
 ### Smart TTS Engine Selection
 The plugin automatically tries multiple TTS engines in order, falling back if one fails:
 
-1. **ElevenLabs** (Online) - High-quality, anime-like voices with natural expression
-2. **Edge TTS** (Free) - Microsoft's neural voices, native Node.js implementation (no Python required)
-3. **Windows SAPI** (Offline) - Built-in Windows speech synthesis
-4. **Local Sound Files** (Fallback) - Plays bundled MP3 files if all TTS fails
+1. **OpenAI-Compatible** (Cloud/Self-hosted) - Any OpenAI-compatible `/v1/audio/speech` endpoint (Kokoro, LocalAI, Coqui, AllTalk, OpenAI API, etc.)
+2. **ElevenLabs** (Online) - High-quality, anime-like voices with natural expression
+3. **Edge TTS** (Free) - Microsoft's neural voices, native Node.js implementation (no Python required)
+4. **Windows SAPI** (Offline) - Built-in Windows speech synthesis
+5. **Local Sound Files** (Fallback) - Plays bundled MP3 files if all TTS fails
 
 ### Smart Notification System
 - **Sound-first mode**: Play a sound immediately, then speak a TTS reminder if user doesn't respond
@@ -118,13 +119,18 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
     // Notification mode: 'sound-first', 'tts-first', 'both', 'sound-only'
     "notificationMode": "sound-first",
     
-    // TTS engine: 'elevenlabs', 'edge', 'sapi'
-    "ttsEngine": "elevenlabs",
+    // TTS engine: 'openai', 'elevenlabs', 'edge', 'sapi'
+    "ttsEngine": "openai",
     "enableTTS": true,
     
     // ElevenLabs settings (get API key from https://elevenlabs.io/app/settings/api-keys)
     "elevenLabsApiKey": "YOUR_API_KEY_HERE",
     "elevenLabsVoiceId": "cgSgspJ2msm6clMCkdW9",  // Jessica - Playful, Bright
+    
+    // OpenAI-compatible TTS (Kokoro, LocalAI, OpenAI, Coqui, AllTalk, etc.)
+    "openaiTtsEndpoint": "http://localhost:8880",
+    "openaiTtsVoice": "af_heart",
+    "openaiTtsModel": "kokoro",
     
     // Edge TTS settings (free, no API key required)
     "edgeVoice": "en-US-AnaNeural",
@@ -155,6 +161,30 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
 ```
 
 For the complete configuration with all TTS engine settings, message arrays, AI prompts, and advanced options, see [`example.config.jsonc`](./example.config.jsonc) in the plugin directory.
+
+### OpenAI-Compatible TTS Setup (Kokoro, LocalAI, OpenAI API, etc.)
+
+For cloud-based or self-hosted TTS using any OpenAI-compatible `/v1/audio/speech` endpoint:
+
+```jsonc
+{
+  "ttsEngine": "openai",
+  "openaiTtsEndpoint": "http://192.168.86.43:8880",  // Your TTS server
+  "openaiTtsVoice": "af_heart",                      // Server-dependent
+  "openaiTtsModel": "kokoro",                        // Server-dependent
+  "openaiTtsApiKey": "",                             // Optional, if server requires auth
+  "openaiTtsSpeed": 1.0                              // 0.25 to 4.0
+}
+```
+
+**Supported OpenAI-Compatible TTS Servers:**
+| Server | Example Endpoint | Voices |
+|--------|------------------|--------|
+| Kokoro | `http://localhost:8880` | `af_heart`, `af_bella`, `am_adam`, etc. |
+| LocalAI | `http://localhost:8080` | Model-dependent |
+| AllTalk | `http://localhost:7851` | Model-dependent |
+| OpenAI | `https://api.openai.com` | `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
+| Coqui | `http://localhost:5002` | Model-dependent |
 
 ### AI Message Generation (Optional)
 
@@ -189,6 +219,11 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
 | Jan.ai | `http://localhost:1337/v1` | Required |
 
 ## Requirements
+
+### For OpenAI-Compatible TTS
+- Any server implementing the `/v1/audio/speech` endpoint
+- Examples: [Kokoro](https://github.com/remsky/Kokoro-FastAPI), [LocalAI](https://localai.io), [AllTalk](https://github.com/erew123/alltalk_tts), OpenAI API, etc.
+- Works with both local self-hosted servers and cloud-based providers.
 
 ### For ElevenLabs TTS
 - ElevenLabs API key (free tier: 10,000 characters/month)
