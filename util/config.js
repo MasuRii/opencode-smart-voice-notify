@@ -324,6 +324,7 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     // ============================================================
     // TTS ENGINE SELECTION
     // ============================================================
+    // 'openai'     - OpenAI-compatible TTS (Self-hosted/Cloud, e.g. Kokoro, LocalAI)
     // 'elevenlabs' - Best quality, anime-like voices (requires API key, free tier: 10k chars/month)
     // 'edge'       - Good quality neural voices (free, requires: pip install edge-tts)
     // 'sapi'       - Windows built-in voices (free, offline, robotic)

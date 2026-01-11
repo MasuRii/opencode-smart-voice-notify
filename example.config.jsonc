@@ -64,6 +64,7 @@
     // ============================================================
     // TTS ENGINE SELECTION
     // ============================================================
+    // 'openai'     - OpenAI-compatible TTS (Self-hosted/Cloud, e.g. Kokoro, LocalAI)
     // 'elevenlabs' - Best quality, anime-like voices (requires API key, free tier: 10k chars/month)
     // 'edge'       - Good quality neural voices (Free, Native Node.js implementation)
     // 'sapi'       - Windows built-in voices (free, offline, robotic)
@@ -136,6 +137,37 @@
     // Volume: 'silent', 'x-soft', 'soft', 'medium', 'loud', 'x-loud'
     "sapiVolume": "loud",
     
+    // ============================================================
+    // OPENAI-COMPATIBLE TTS SETTINGS (Kokoro, LocalAI, OpenAI, etc.)
+    // ============================================================
+    // Any OpenAI-compatible /v1/audio/speech endpoint.
+    // Examples: Kokoro, OpenAI, LocalAI, Coqui, AllTalk, etc.
+    //
+    // To use OpenAI-compatible TTS:
+    // 1. Set ttsEngine above to "openai"
+    // 2. Set openaiTtsEndpoint to your server URL (without /v1/audio/speech)
+    // 3. Configure voice and model for your server
+    
+    // Base URL for your TTS server (e.g., "http://192.168.86.43:8880")
+    "openaiTtsEndpoint": "",
+    
+    // API key (leave empty if your server doesn't require auth)
+    "openaiTtsApiKey": "",
+    
+    // Model name (server-dependent, e.g., "tts-1", "kokoro", "xtts")
+    "openaiTtsModel": "tts-1",
+    
+    // Voice name (server-dependent)
+    // Kokoro voices: "af_heart", "af_bella", "am_adam", etc.
+    // OpenAI voices: "alloy", "echo", "fable", "onyx", "nova", "shimmer"
+    "openaiTtsVoice": "alloy",
+    
+    // Audio format: "mp3", "opus", "aac", "flac", "wav", "pcm"
+    "openaiTtsFormat": "mp3",
+    
+    // Speech speed: 0.25 to 4.0 (1.0 = normal)
+    "openaiTtsSpeed": 1.0,
+
     // ============================================================
     // INITIAL TTS MESSAGES (Used immediately or after sound)
     // These are randomly selected each time for variety

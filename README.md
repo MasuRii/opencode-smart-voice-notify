@@ -15,7 +15,7 @@ A smart voice notification plugin for [OpenCode](https://opencode.ai) with **mul
 ### Smart TTS Engine Selection
 The plugin automatically tries multiple TTS engines in order, falling back if one fails:
 
-1. **OpenAI-Compatible** (Self-hosted) - Any OpenAI-compatible `/v1/audio/speech` endpoint (Kokoro, LocalAI, Coqui, AllTalk, etc.)
+1. **OpenAI-Compatible** (Cloud/Self-hosted) - Any OpenAI-compatible `/v1/audio/speech` endpoint (Kokoro, LocalAI, Coqui, AllTalk, OpenAI API, etc.)
 2. **ElevenLabs** (Online) - High-quality, anime-like voices with natural expression
 3. **Edge TTS** (Free) - Microsoft's neural voices, native Node.js implementation (no Python required)
 4. **Windows SAPI** (Offline) - Built-in Windows speech synthesis
@@ -162,9 +162,9 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
 
 For the complete configuration with all TTS engine settings, message arrays, AI prompts, and advanced options, see [`example.config.jsonc`](./example.config.jsonc) in the plugin directory.
 
-### OpenAI-Compatible TTS Setup (Kokoro, LocalAI, etc.)
+### OpenAI-Compatible TTS Setup (Kokoro, LocalAI, OpenAI API, etc.)
 
-For self-hosted TTS using any OpenAI-compatible `/v1/audio/speech` endpoint:
+For cloud-based or self-hosted TTS using any OpenAI-compatible `/v1/audio/speech` endpoint:
 
 ```jsonc
 {
@@ -222,8 +222,8 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
 
 ### For OpenAI-Compatible TTS
 - Any server implementing the `/v1/audio/speech` endpoint
-- Examples: [Kokoro](https://github.com/remsky/Kokoro-FastAPI), [LocalAI](https://localai.io), [AllTalk](https://github.com/erew123/alltalk_tts), OpenAI API
-- No API key required for most self-hosted servers
+- Examples: [Kokoro](https://github.com/remsky/Kokoro-FastAPI), [LocalAI](https://localai.io), [AllTalk](https://github.com/erew123/alltalk_tts), OpenAI API, etc.
+- Works with both local self-hosted servers and cloud-based providers.
 
 ### For ElevenLabs TTS
 - ElevenLabs API key (free tier: 10,000 characters/month)
