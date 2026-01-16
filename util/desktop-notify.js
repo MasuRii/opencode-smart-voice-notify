@@ -173,7 +173,9 @@ const buildPlatformOptions = (title, message, options = {}) => {
  * });
  */
 export const sendDesktopNotification = async (title, message, options = {}) => {
-  const debug = options.debugLog || false;
+  // Handle null/undefined options gracefully
+  const opts = options || {};
+  const debug = opts.debugLog || false;
   
   try {
     // Check platform support
@@ -184,7 +186,7 @@ export const sendDesktopNotification = async (title, message, options = {}) => {
     }
     
     // Build platform-specific options
-    const notifyOptions = buildPlatformOptions(title, message, options);
+    const notifyOptions = buildPlatformOptions(title, message, opts);
     
     debugLog(`Sending notification: "${title}" - "${message}" (platform: ${getPlatform()})`, debug);
     
