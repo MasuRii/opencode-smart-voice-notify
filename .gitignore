@@ -21,6 +21,10 @@ Thumbs.db
 # Environment
 .env
 .env.local
+tests/.env.local
+
+# Coverage reports
+coverage/
 
 # Ralph - AI agent loop files
 .ralph-state.json

@@ -6,8 +6,7 @@
 # Test patterns: ["**/*.test.js", "**/*.spec.js"] (Bun's default)
 
 # Preload file for test environment setup
-# Uncomment after Task 0.3 creates tests/setup.js:
-# preload = ["./tests/setup.js"]
+preload = ["./tests/setup.js"]
 
 # Test execution timeout in milliseconds (10 seconds)
 timeout = 10000
