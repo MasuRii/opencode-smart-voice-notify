@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { createTTS, getTTSConfig } from './util/tts.js';
 import { getSmartMessage } from './util/ai-messages.js';
-import { notifyTaskComplete, notifyPermissionRequest, notifyQuestion } from './util/desktop-notify.js';
+import { notifyTaskComplete, notifyPermissionRequest, notifyQuestion, notifyError } from './util/desktop-notify.js';
 
 /**
  * OpenCode Smart Voice Notify Plugin
@@ -154,9 +154,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
    * Send a desktop notification (if enabled).
    * Desktop notifications are independent of sound/TTS and fire immediately.
    * 
-   * @param {'idle' | 'permission' | 'question'} type - Notification type
+   * @param {'idle' | 'permission' | 'question' | 'error'} type - Notification type
    * @param {string} message - Notification message
-   * @param {object} options - Additional options (count for permission/question)
+   * @param {object} options - Additional options (count for permission/question/error)
    */
   const sendDesktopNotify = (type, message, options = {}) => {
     if (!config.enableDesktopNotification) return;
@@ -183,6 +183,10 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       } else if (type === 'question') {
         notifyQuestion(message, notifyOptions).catch(e => {
           debugLog(`Desktop notification error (question): ${e.message}`);
+        });
+      } else if (type === 'error') {
+        notifyError(message, notifyOptions).catch(e => {
+          debugLog(`Desktop notification error (error): ${e.message}`);
         });
       }
       
@@ -242,9 +246,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
   /**
    * Schedule a TTS reminder if user doesn't respond within configured delay.
    * The reminder uses a personalized TTS message.
-   * @param {string} type - 'idle', 'permission', or 'question'
+   * @param {string} type - 'idle', 'permission', 'question', or 'error'
    * @param {string} message - The TTS message to speak (used directly, supports count-aware messages)
-   * @param {object} options - Additional options (fallbackSound, permissionCount, questionCount)
+   * @param {object} options - Additional options (fallbackSound, permissionCount, questionCount, errorCount)
    */
   const scheduleTTSReminder = (type, message, options = {}) => {
     // Check if TTS reminders are enabled
@@ -259,6 +263,8 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       delaySeconds = config.permissionReminderDelaySeconds || config.ttsReminderDelaySeconds || 30;
     } else if (type === 'question') {
       delaySeconds = config.questionReminderDelaySeconds || config.ttsReminderDelaySeconds || 25;
+    } else if (type === 'error') {
+      delaySeconds = config.errorReminderDelaySeconds || config.ttsReminderDelaySeconds || 20;
     } else {
       delaySeconds = config.idleReminderDelaySeconds || config.ttsReminderDelaySeconds || 30;
     }
@@ -268,7 +274,7 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     cancelPendingReminder(type);
 
     // Store count for generating count-aware messages in reminders
-    const itemCount = options.permissionCount || options.questionCount || 1;
+    const itemCount = options.permissionCount || options.questionCount || options.errorCount || 1;
 
     debugLog(`scheduleTTSReminder: scheduling ${type} TTS in ${delaySeconds}s (count=${itemCount})`);
 
@@ -291,13 +297,15 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         debugLog(`scheduleTTSReminder: firing ${type} TTS reminder (count=${reminder?.itemCount || 1})`);
         
         // Get the appropriate reminder message
-        // For permissions/questions with count > 1, use the count-aware message generator
+        // For permissions/questions/errors with count > 1, use the count-aware message generator
         const storedCount = reminder?.itemCount || 1;
         let reminderMessage;
         if (type === 'permission') {
           reminderMessage = await getPermissionMessage(storedCount, true);
         } else if (type === 'question') {
           reminderMessage = await getQuestionMessage(storedCount, true);
+        } else if (type === 'error') {
+          reminderMessage = await getErrorMessage(storedCount, true);
         } else {
           reminderMessage = await getSmartMessage('idle', true, config.idleReminderTTSMessages);
         }
@@ -352,6 +360,8 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
                 followUpMessage = await getPermissionMessage(followUpStoredCount, true);
               } else if (type === 'question') {
                 followUpMessage = await getQuestionMessage(followUpStoredCount, true);
+              } else if (type === 'error') {
+                followUpMessage = await getErrorMessage(followUpStoredCount, true);
               } else {
                 followUpMessage = await getSmartMessage('idle', true, config.idleReminderTTSMessages);
               }
@@ -524,6 +534,45 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         return template.replace('{count}', count.toString());
       }
       return `Hey! I have ${count} questions for you. Please check your screen.`;
+    }
+  };
+
+  /**
+   * Get a count-aware TTS message for error notifications
+   * Uses AI generation when enabled, falls back to static messages
+   * @param {number} count - Number of errors
+   * @param {boolean} isReminder - Whether this is a reminder message
+   * @returns {Promise<string>} The formatted message
+   */
+  const getErrorMessage = async (count, isReminder = false) => {
+    const messages = isReminder 
+      ? config.errorReminderTTSMessages 
+      : config.errorTTSMessages;
+    
+    // If AI messages are enabled, ALWAYS try AI first (regardless of count)
+    if (config.enableAIMessages) {
+      const aiMessage = await getSmartMessage('error', isReminder, messages, { count, type: 'error' });
+      // getSmartMessage returns static message as fallback, so if AI was attempted
+      // and succeeded, we'll get the AI message. If it failed, we get static.
+      // Check if we got a valid message (not the generic fallback)
+      if (aiMessage && aiMessage !== 'Notification') {
+        return aiMessage;
+      }
+    }
+    
+    // Fallback to static messages (AI disabled or failed with generic fallback)
+    if (count === 1) {
+      return getRandomMessage(messages);
+    } else {
+      const countMessages = isReminder
+        ? config.errorReminderTTSMessagesMultiple
+        : config.errorTTSMessagesMultiple;
+      
+      if (countMessages && countMessages.length > 0) {
+        const template = getRandomMessage(countMessages);
+        return template.replace('{count}', count.toString());
+      }
+      return `Alert! There are ${count} errors that need your attention.`;
     }
   };
 
@@ -878,7 +927,66 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         }
 
         // ========================================
-        // NOTIFICATION 2: Permission Request (BATCHED)
+        // NOTIFICATION 2: Session Error (Agent encountered an error)
+        // 
+        // FIX: Play sound IMMEDIATELY before any AI generation to avoid delay.
+        // AI message generation can take 3-15+ seconds, which was delaying sound playback.
+        // ========================================
+        if (event.type === "session.error") {
+          const sessionID = event.properties?.sessionID;
+          if (!sessionID) {
+            debugLog(`session.error: skipped (no sessionID)`);
+            return;
+          }
+
+          // Skip sub-sessions (child sessions spawned for parallel operations)
+          try {
+            const session = await client.session.get({ path: { id: sessionID } });
+            if (session?.data?.parentID) {
+              debugLog(`session.error: skipped (sub-session ${sessionID})`);
+              return;
+            }
+          } catch (e) {}
+
+          debugLog(`session.error: notifying for session ${sessionID}`);
+          
+          // Step 1: Show toast IMMEDIATELY (fire and forget - no await)
+          showToast("❌ Agent encountered an error", "error", 8000);  // No await - instant display
+          
+          // Step 1b: Send desktop notification (fire and forget - independent of sound/TTS)
+          sendDesktopNotify('error', 'The agent encountered an error and needs your attention.');
+          
+          // Step 2: Play sound (after toast is triggered)
+          // Only play sound in sound-first, sound-only, or both mode
+          if (config.notificationMode !== 'tts-first') {
+            await playSound(config.errorSound, 2);  // Play twice for urgency
+          }
+
+          // Step 3: Generate AI message for reminder AFTER sound played
+          const reminderMessage = await getErrorMessage(1, true);
+
+          // Step 4: Schedule TTS reminder if enabled
+          if (config.enableTTSReminder && reminderMessage) {
+            scheduleTTSReminder('error', reminderMessage, {
+              fallbackSound: config.errorSound,
+              errorCount: 1
+            });
+          }
+          
+          // Step 5: If TTS-first or both mode, generate and speak immediate message
+          if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
+            const ttsMessage = await getErrorMessage(1, false);
+            await tts.wakeMonitor();
+            await tts.forceVolume();
+            await tts.speak(ttsMessage, {
+              enableTTS: true,
+              fallbackSound: config.errorSound
+            });
+          }
+        }
+
+        // ========================================
+        // NOTIFICATION 3: Permission Request (BATCHED)
         // ========================================
         // NOTE: OpenCode SDK v1.1.1+ changed permission events:
         //   - Old: "permission.updated" with properties.id
@@ -923,7 +1031,7 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         }
 
         // ========================================
-        // NOTIFICATION 3: Question Request (BATCHED) - SDK v1.1.7+
+        // NOTIFICATION 4: Question Request (BATCHED) - SDK v1.1.7+
         // ========================================
         // The "question" tool allows the LLM to ask users questions during execution.
         // Events: question.asked, question.replied, question.rejected
