@@ -4,6 +4,7 @@ import path from 'path';
 import { createTTS, getTTSConfig } from './util/tts.js';
 import { getSmartMessage } from './util/ai-messages.js';
 import { notifyTaskComplete, notifyPermissionRequest, notifyQuestion, notifyError } from './util/desktop-notify.js';
+import { isTerminalFocused } from './util/focus-detect.js';
 
 /**
  * OpenCode Smart Voice Notify Plugin
@@ -120,6 +121,43 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       const timestamp = new Date().toISOString();
       fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
     } catch (e) {}
+  };
+
+  /**
+   * Check if notifications should be suppressed due to terminal focus.
+   * Returns true if we should NOT send sound/desktop notifications.
+   * 
+   * Note: TTS reminders are NEVER suppressed by this function.
+   * The user might step away after the task completes, so reminders should still work.
+   * 
+   * @returns {Promise<boolean>} True if notifications should be suppressed
+   */
+  const shouldSuppressNotification = async () => {
+    // If alwaysNotify is true, never suppress
+    if (config.alwaysNotify) {
+      debugLog('shouldSuppressNotification: alwaysNotify=true, not suppressing');
+      return false;
+    }
+    
+    // If suppressWhenFocused is disabled, don't suppress
+    if (!config.suppressWhenFocused) {
+      debugLog('shouldSuppressNotification: suppressWhenFocused=false, not suppressing');
+      return false;
+    }
+    
+    // Check if terminal is focused
+    try {
+      const isFocused = await isTerminalFocused({ debugLog: config.debugLog });
+      if (isFocused) {
+        debugLog('shouldSuppressNotification: terminal is focused, suppressing sound/desktop notifications');
+        return true;
+      }
+    } catch (e) {
+      debugLog(`shouldSuppressNotification: focus detection error: ${e.message}`);
+      // On error, fail open (don't suppress)
+    }
+    
+    return false;
   };
 
   /**
@@ -601,21 +639,33 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     // We track all IDs in the batch for proper cleanup
     activePermissionId = batch[0];
     
+    // Check if we should suppress sound/desktop notifications due to focus
+    const suppressPermission = await shouldSuppressNotification();
+    
     // Step 1: Show toast IMMEDIATELY (fire and forget - no await)
+    // Toast is always shown (it's inside the terminal, so not disruptive if focused)
     const toastMessage = batchCount === 1
       ? "⚠️ Permission request requires your attention"
       : `⚠️ ${batchCount} permission requests require your attention`;
     showToast(toastMessage, "warning", 8000);  // No await - instant display
     
-    // Step 1b: Send desktop notification (fire and forget - independent of sound/TTS)
+    // Step 1b: Send desktop notification (only if not suppressed)
     const desktopMessage = batchCount === 1
       ? 'Agent needs permission to proceed. Please review the request.'
       : `${batchCount} permission requests are waiting for your approval.`;
-    sendDesktopNotify('permission', desktopMessage, { count: batchCount });
+    if (!suppressPermission) {
+      sendDesktopNotify('permission', desktopMessage, { count: batchCount });
+    } else {
+      debugLog('processPermissionBatch: desktop notification suppressed (terminal focused)');
+    }
     
-    // Step 2: Play sound (after toast is triggered)
+    // Step 2: Play sound (only if not suppressed)
     const soundLoops = batchCount === 1 ? 2 : Math.min(3, batchCount);
-    await playSound(config.permissionSound, soundLoops);
+    if (!suppressPermission) {
+      await playSound(config.permissionSound, soundLoops);
+    } else {
+      debugLog('processPermissionBatch: sound suppressed (terminal focused)');
+    }
 
     // CHECK: Did user already respond while sound was playing?
     if (pendingPermissionBatch.length > 0) {
@@ -686,20 +736,32 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     // We track all IDs in the batch for proper cleanup
     activeQuestionId = batch[0]?.id;
     
+    // Check if we should suppress sound/desktop notifications due to focus
+    const suppressQuestion = await shouldSuppressNotification();
+    
     // Step 1: Show toast IMMEDIATELY (fire and forget - no await)
+    // Toast is always shown (it's inside the terminal, so not disruptive if focused)
     const toastMessage = totalQuestionCount === 1
       ? "❓ The agent has a question for you"
       : `❓ The agent has ${totalQuestionCount} questions for you`;
     showToast(toastMessage, "info", 8000);  // No await - instant display
     
-    // Step 1b: Send desktop notification (fire and forget - independent of sound/TTS)
+    // Step 1b: Send desktop notification (only if not suppressed)
     const desktopMessage = totalQuestionCount === 1
       ? 'The agent has a question and needs your input.'
       : `The agent has ${totalQuestionCount} questions for you. Please check your screen.`;
-    sendDesktopNotify('question', desktopMessage, { count: totalQuestionCount });
+    if (!suppressQuestion) {
+      sendDesktopNotify('question', desktopMessage, { count: totalQuestionCount });
+    } else {
+      debugLog('processQuestionBatch: desktop notification suppressed (terminal focused)');
+    }
     
-    // Step 2: Play sound (after toast is triggered)
-    await playSound(config.questionSound, 2);
+    // Step 2: Play sound (only if not suppressed)
+    if (!suppressQuestion) {
+      await playSound(config.questionSound, 2);
+    } else {
+      debugLog('processQuestionBatch: sound suppressed (terminal focused)');
+    }
 
     // CHECK: Did user already respond while sound was playing?
     if (pendingQuestionBatch.length > 0) {
@@ -886,16 +948,28 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           
           debugLog(`session.idle: notifying for session ${sessionID} (idleTime=${lastSessionIdleTime})`);
           
+          // Check if we should suppress sound/desktop notifications due to focus
+          const suppressIdle = await shouldSuppressNotification();
+          
           // Step 1: Show toast IMMEDIATELY (fire and forget - no await)
+          // Toast is always shown (it's inside the terminal, so not disruptive if focused)
           showToast("✅ Agent has finished working", "success", 5000);  // No await - instant display
           
-          // Step 1b: Send desktop notification (fire and forget - independent of sound/TTS)
-          sendDesktopNotify('idle', 'Agent has finished working. Your code is ready for review.');
+          // Step 1b: Send desktop notification (only if not suppressed)
+          if (!suppressIdle) {
+            sendDesktopNotify('idle', 'Agent has finished working. Your code is ready for review.');
+          } else {
+            debugLog('session.idle: desktop notification suppressed (terminal focused)');
+          }
           
-          // Step 2: Play sound (after toast is triggered)
+          // Step 2: Play sound (only if not suppressed)
           // Only play sound in sound-first, sound-only, or both mode
           if (config.notificationMode !== 'tts-first') {
-            await playSound(config.idleSound, 1);
+            if (!suppressIdle) {
+              await playSound(config.idleSound, 1);
+            } else {
+              debugLog('session.idle: sound suppressed (terminal focused)');
+            }
           }
           
           // Step 3: Check race condition - did user respond during sound?
@@ -950,16 +1024,28 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
 
           debugLog(`session.error: notifying for session ${sessionID}`);
           
+          // Check if we should suppress sound/desktop notifications due to focus
+          const suppressError = await shouldSuppressNotification();
+          
           // Step 1: Show toast IMMEDIATELY (fire and forget - no await)
+          // Toast is always shown (it's inside the terminal, so not disruptive if focused)
           showToast("❌ Agent encountered an error", "error", 8000);  // No await - instant display
           
-          // Step 1b: Send desktop notification (fire and forget - independent of sound/TTS)
-          sendDesktopNotify('error', 'The agent encountered an error and needs your attention.');
+          // Step 1b: Send desktop notification (only if not suppressed)
+          if (!suppressError) {
+            sendDesktopNotify('error', 'The agent encountered an error and needs your attention.');
+          } else {
+            debugLog('session.error: desktop notification suppressed (terminal focused)');
+          }
           
-          // Step 2: Play sound (after toast is triggered)
+          // Step 2: Play sound (only if not suppressed)
           // Only play sound in sound-first, sound-only, or both mode
           if (config.notificationMode !== 'tts-first') {
-            await playSound(config.errorSound, 2);  // Play twice for urgency
+            if (!suppressError) {
+              await playSound(config.errorSound, 2);  // Play twice for urgency
+            } else {
+              debugLog('session.error: sound suppressed (terminal focused)');
+            }
           }
 
           // Step 3: Generate AI message for reminder AFTER sound played

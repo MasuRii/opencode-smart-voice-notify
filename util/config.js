@@ -253,6 +253,7 @@ const getDefaultConfigObject = () => ({
   desktopNotificationTimeout: 5,
   showProjectInNotification: true,
   suppressWhenFocused: true,
+  alwaysNotify: false,
   idleThresholdSeconds: 60,
   debugLog: false
 });
@@ -759,6 +760,10 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     // Suppress sound and desktop notifications when terminal is focused
     // TTS reminders are still allowed (user might step away after task completes)
     "suppressWhenFocused": ${overrides.suppressWhenFocused !== undefined ? overrides.suppressWhenFocused : true},
+    
+    // Override focus detection: always send notifications even when terminal is focused
+    // Set to true to disable focus-based suppression entirely
+    "alwaysNotify": ${overrides.alwaysNotify !== undefined ? overrides.alwaysNotify : false},
     
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},
