@@ -217,6 +217,9 @@ const getDefaultConfigObject = () => ({
   volumeThreshold: 50,
   enableToast: true,
   enableSound: true,
+  enableDesktopNotification: true,
+  desktopNotificationTimeout: 5,
+  showProjectInNotification: true,
   idleThresholdSeconds: 60,
   debugLog: false
 });
@@ -634,6 +637,28 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     
     // Enable audio notifications (sound files and TTS)
     "enableSound": ${overrides.enableSound !== undefined ? overrides.enableSound : true},
+    
+    // ============================================================
+    // DESKTOP NOTIFICATION SETTINGS
+    // ============================================================
+    // Native desktop notifications (Windows Toast, macOS Notification Center, Linux notify-send)
+    // These appear as system notifications alongside sound and TTS.
+    //
+    // Note: On Linux, you may need to install libnotify-bin:
+    //   Ubuntu/Debian: sudo apt install libnotify-bin
+    //   Fedora: sudo dnf install libnotify
+    //   Arch: sudo pacman -S libnotify
+    
+    // Enable native desktop notifications
+    "enableDesktopNotification": ${overrides.enableDesktopNotification !== undefined ? overrides.enableDesktopNotification : true},
+    
+    // How long the notification stays on screen (in seconds)
+    // Note: Some platforms may ignore this (especially Windows 10+)
+    "desktopNotificationTimeout": ${overrides.desktopNotificationTimeout !== undefined ? overrides.desktopNotificationTimeout : 5},
+    
+    // Include the project name in notification titles for easier identification
+    // Example: "OpenCode - MyProject" instead of just "OpenCode"
+    "showProjectInNotification": ${overrides.showProjectInNotification !== undefined ? overrides.showProjectInNotification : true},
     
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},
