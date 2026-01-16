@@ -4,6 +4,11 @@
   "description": "Smart voice notification plugin for OpenCode with multiple TTS engines (ElevenLabs, Edge TTS, Windows SAPI), AI-generated dynamic messages, and intelligent reminder system",
   "main": "index.js",
   "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage"
+  },
   "author": "MasuRii",
   "license": "MIT",
   "keywords": [
