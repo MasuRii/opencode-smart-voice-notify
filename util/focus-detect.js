@@ -48,7 +48,7 @@ const CACHE_TTL_MS = 500;
  * These are matched against the frontmost application name.
  * The detect-terminal package helps identify which terminal is in use.
  */
-const KNOWN_TERMINALS_MACOS = [
+export const KNOWN_TERMINALS_MACOS = [
   'Terminal',
   'iTerm',
   'iTerm2',
