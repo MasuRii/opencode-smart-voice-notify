@@ -235,6 +235,21 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
 ### For Windows SAPI
 - Windows OS (uses built-in System.Speech)
 
+### For Desktop Notifications
+- **Windows**: Built-in (uses Toast notifications)
+- **macOS**: Built-in (uses Notification Center)
+- **Linux**: Requires `notify-send` (libnotify)
+  ```bash
+  # Ubuntu/Debian
+  sudo apt install libnotify-bin
+
+  # Fedora
+  sudo dnf install libnotify
+
+  # Arch Linux
+  sudo pacman -S libnotify
+  ```
+
 ### For Sound Playback
 - **Windows**: Built-in (uses Windows Media Player)
 - **macOS**: Built-in (`afplay`)
