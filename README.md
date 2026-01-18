@@ -51,6 +51,7 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - Cross-platform support (Windows, macOS, Linux)
 - **Focus Detection** (macOS): Suppresses notifications when terminal is focused
 - **Webhook Integration**: Receive notifications on Discord or any custom webhook endpoint when tasks finish or need attention
+- **Themed Sound Packs**: Use custom sound collections (e.g., Warcraft, StarCraft) by simply pointing to a directory
 
 ## Installation
 
@@ -158,6 +159,10 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
     "webhookUsername": "OpenCode Notify",
     "webhookMentionOnPermission": false,
     
+    // Sound theme settings (optional)
+    "soundThemeDir": "", // Path to custom sound theme directory
+    "randomizeSoundFromTheme": true, // Pick random sound from theme subfolders
+    
     // General settings
 
     "wakeMonitor": true,
@@ -250,7 +255,7 @@ Receive remote notifications on Discord or any custom endpoint. This is perfect 
    - **Color-coded Embeds**: Different colors for task completion (green), permissions (orange), errors (red), and questions (blue).
    - **Smart Mentions**: Automatically @everyone on Discord for urgent permission requests.
    - **Rate Limiting**: Intelligent retry logic with backoff if Discord's rate limits are hit.
-   - **Fire-and-forget**: Webhook requests never block local sound or TTS playback.
+    - **Fire-and-forget**: Webhook requests never block local sound or TTS playback.
 
 **Supported Webhook Events:**
 | Event | Trigger |
@@ -261,7 +266,42 @@ Receive remote notifications on Discord or any custom endpoint. This is perfect 
 | `question` | Agent is asking you a question |
 
 
+### Custom Sound Themes (Optional)
+
+You can replace individual sound files with entire "Sound Themes" (like the classic Warcraft II or StarCraft sound packs).
+
+1. **Set up your theme directory**:
+   Create a folder (e.g., `~/.config/opencode/themes/warcraft2/`) with the following structure:
+   ```text
+   warcraft2/
+   ├── idle/          # Sounds for when the agent finishes
+   │   ├── job_done.mp3
+   │   └── alright.wav
+   ├── permission/    # Sounds for permission requests
+   │   ├── help.mp3
+   │   └── need_orders.wav
+   ├── error/         # Sounds for agent errors
+   │   └── alert.mp3
+   └── question/      # Sounds for agent questions
+       └── yes_milord.mp3
+   ```
+
+2. **Configure the theme in your config**:
+   ```jsonc
+   {
+     "soundThemeDir": "themes/warcraft2",
+     "randomizeSoundFromTheme": true
+   }
+   ```
+
+3. **Features**:
+   - **Automatic Fallback**: If a theme subdirectory or sound is missing, the plugin automatically falls back to your default sound files.
+   - **Randomization**: If multiple sounds are in a subdirectory, the plugin will pick one at random each time (if `randomizeSoundFromTheme` is `true`).
+   - **Relative Paths**: Paths are relative to your OpenCode config directory (`~/.config/opencode/`).
+
+
 ## Requirements
+
 
 ### For OpenAI-Compatible TTS
 - Any server implementing the `/v1/audio/speech` endpoint
