@@ -30,3 +30,4 @@ coverage/
 .ralph-state.json
 .ralph-lock
 .ralph-done
+.ralph*

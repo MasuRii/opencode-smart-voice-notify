@@ -4,6 +4,7 @@ import path from 'path';
 import { createTTS, getTTSConfig } from './util/tts.js';
 import { getSmartMessage } from './util/ai-messages.js';
 import { notifyTaskComplete, notifyPermissionRequest, notifyQuestion, notifyError } from './util/desktop-notify.js';
+import { notifyWebhookIdle, notifyWebhookPermission, notifyWebhookError, notifyWebhookQuestion } from './util/webhook.js';
 import { isTerminalFocused } from './util/focus-detect.js';
 
 /**
@@ -231,6 +232,58 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       debugLog(`sendDesktopNotify: sent ${type} notification`);
     } catch (e) {
       debugLog(`sendDesktopNotify error: ${e.message}`);
+    }
+  };
+
+  /**
+   * Send a webhook notification (if enabled).
+   * Webhook notifications are independent and fire immediately.
+   * 
+   * @param {'idle' | 'permission' | 'question' | 'error'} type - Notification type
+   * @param {string} message - Notification message
+   * @param {object} options - Additional options (count, sessionId)
+   */
+  const sendWebhookNotify = (type, message, options = {}) => {
+    if (!config.enableWebhook || !config.webhookUrl) return;
+    
+    // Check if this event type is enabled in webhookEvents
+    if (Array.isArray(config.webhookEvents) && !config.webhookEvents.includes(type)) {
+      debugLog(`sendWebhookNotify: ${type} event skipped (not in webhookEvents)`);
+      return;
+    }
+    
+    try {
+      const webhookOptions = {
+        projectName: project?.name,
+        sessionId: options.sessionId,
+        count: options.count || 1,
+        username: config.webhookUsername,
+        debugLog: config.debugLog,
+        mention: type === 'permission' ? config.webhookMentionOnPermission : false
+      };
+      
+      // Fire and forget (no await)
+      if (type === 'idle') {
+        notifyWebhookIdle(config.webhookUrl, message, webhookOptions).catch(e => {
+          debugLog(`Webhook notification error (idle): ${e.message}`);
+        });
+      } else if (type === 'permission') {
+        notifyWebhookPermission(config.webhookUrl, message, webhookOptions).catch(e => {
+          debugLog(`Webhook notification error (permission): ${e.message}`);
+        });
+      } else if (type === 'question') {
+        notifyWebhookQuestion(config.webhookUrl, message, webhookOptions).catch(e => {
+          debugLog(`Webhook notification error (question): ${e.message}`);
+        });
+      } else if (type === 'error') {
+        notifyWebhookError(config.webhookUrl, message, webhookOptions).catch(e => {
+          debugLog(`Webhook notification error (error): ${e.message}`);
+        });
+      }
+      
+      debugLog(`sendWebhookNotify: sent ${type} notification`);
+    } catch (e) {
+      debugLog(`sendWebhookNotify error: ${e.message}`);
     }
   };
 
@@ -658,6 +711,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     } else {
       debugLog('processPermissionBatch: desktop notification suppressed (terminal focused)');
     }
+
+    // Step 1c: Send webhook notification
+    sendWebhookNotify('permission', desktopMessage, { count: batchCount });
     
     // Step 2: Play sound (only if not suppressed)
     const soundLoops = batchCount === 1 ? 2 : Math.min(3, batchCount);
@@ -755,6 +811,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     } else {
       debugLog('processQuestionBatch: desktop notification suppressed (terminal focused)');
     }
+
+    // Step 1c: Send webhook notification
+    sendWebhookNotify('question', desktopMessage, { count: totalQuestionCount });
     
     // Step 2: Play sound (only if not suppressed)
     if (!suppressQuestion) {
@@ -956,11 +1015,14 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           showToast("✅ Agent has finished working", "success", 5000);  // No await - instant display
           
           // Step 1b: Send desktop notification (only if not suppressed)
-          if (!suppressIdle) {
-            sendDesktopNotify('idle', 'Agent has finished working. Your code is ready for review.');
-          } else {
-            debugLog('session.idle: desktop notification suppressed (terminal focused)');
-          }
+      if (!suppressIdle) {
+        sendDesktopNotify('idle', 'Agent has finished working. Your code is ready for review.');
+      } else {
+        debugLog('session.idle: desktop notification suppressed (terminal focused)');
+      }
+
+      // Step 1c: Send webhook notification
+      sendWebhookNotify('idle', 'Agent has finished working. Your code is ready for review.', { sessionId: sessionID });
           
           // Step 2: Play sound (only if not suppressed)
           // Only play sound in sound-first, sound-only, or both mode
@@ -1037,6 +1099,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           } else {
             debugLog('session.error: desktop notification suppressed (terminal focused)');
           }
+
+          // Step 1c: Send webhook notification
+          sendWebhookNotify('error', 'The agent encountered an error and needs your attention.', { sessionId: sessionID });
           
           // Step 2: Play sound (only if not suppressed)
           // Only play sound in sound-first, sound-only, or both mode
