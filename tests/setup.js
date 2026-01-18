@@ -230,7 +230,7 @@ export function testFileExists(relativePath) {
 export function createMockShellRunner(options = {}) {
   const calls = [];
   
-  const mockRunner = async (strings, ...values) => {
+  const mockRunner = (strings, ...values) => {
     // Reconstruct the command from template literal
     let command = strings[0];
     for (let i = 0; i < values.length; i++) {
@@ -243,19 +243,40 @@ export function createMockShellRunner(options = {}) {
     };
     calls.push(callRecord);
     
-    // Allow custom handler for specific commands
-    if (options.handler) {
-      return options.handler(command, callRecord);
-    }
+    // Create a promise that resolves to the result
+    const promise = (async () => {
+      // Allow custom handler for specific commands
+      if (options.handler) {
+        const handlerResult = await options.handler(callRecord.command, callRecord);
+        // If handler returns a simple object, merge it with default result
+        if (handlerResult && typeof handlerResult === 'object' && !(handlerResult instanceof Buffer)) {
+          return {
+            stdout: Buffer.from(''),
+            stderr: Buffer.from(''),
+            exitCode: 0,
+            text: () => '',
+            toString: () => '',
+            ...handlerResult
+          };
+        }
+        return handlerResult;
+      }
+      
+      // Default: return empty successful result
+      return {
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+        exitCode: 0,
+        text: () => '',
+        toString: () => ''
+      };
+    })();
     
-    // Default: return empty successful result
-    return {
-      stdout: Buffer.from(''),
-      stderr: Buffer.from(''),
-      exitCode: 0,
-      text: () => '',
-      toString: () => ''
-    };
+    // Add Bun shell methods to the promise
+    promise.quiet = function() { return this; };
+    promise.nothrow = function() { return this; };
+    
+    return promise;
   };
   
   // Add utility methods
