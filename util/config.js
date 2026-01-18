@@ -28,7 +28,7 @@ const debugLogToFile = (message, configDir) => {
  * @param {string} jsonc 
  * @returns {any}
  */
-const parseJSONC = (jsonc) => {
+export const parseJSONC = (jsonc) => {
   const stripped = jsonc.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
   return JSON.parse(stripped);
 };
@@ -39,7 +39,7 @@ const parseJSONC = (jsonc) => {
  * @param {number} indent 
  * @returns {string}
  */
-const formatJSON = (val, indent = 0) => {
+export const formatJSON = (val, indent = 0) => {
   const json = JSON.stringify(val, null, 4);
   return indent > 0 ? json.replace(/\n/g, '\n' + ' '.repeat(indent)) : json;
 };
@@ -54,7 +54,7 @@ const formatJSON = (val, indent = 0) => {
  * @param {object} user - The user's existing configuration object
  * @returns {object} Merged configuration with user values preserved
  */
-const deepMerge = (defaults, user) => {
+export const deepMerge = (defaults, user) => {
   // If user value doesn't exist, use default
   if (user === undefined || user === null) {
     return defaults;
@@ -90,7 +90,8 @@ const deepMerge = (defaults, user) => {
  * This is the source of truth for all default values.
  * @returns {object} Default configuration object
  */
-const getDefaultConfigObject = () => ({
+export const getDefaultConfigObject = () => ({
+
   _configVersion: null, // Will be set by caller
   enabled: true,
   notificationMode: 'sound-first',
@@ -275,7 +276,8 @@ const getDefaultConfigObject = () => ({
  * @param {string} prefix 
  * @returns {string[]} Array of field paths that were added
  */
-const findNewFields = (defaults, user, prefix = '') => {
+export const findNewFields = (defaults, user, prefix = '') => {
+
   const newFields = [];
   
   if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {

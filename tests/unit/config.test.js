@@ -21,6 +21,11 @@ import path from 'path';
 
 describe('config module', () => {
   let loadConfig;
+  let parseJSONC;
+  let deepMerge;
+  let findNewFields;
+  let getDefaultConfigObject;
+  let formatJSON;
   
   beforeEach(async () => {
     // Create test temp directory before each test
@@ -30,10 +35,159 @@ describe('config module', () => {
     // Fresh import of the module (loadConfig uses OPENCODE_CONFIG_DIR env var)
     const module = await import('../../util/config.js');
     loadConfig = module.loadConfig;
+    parseJSONC = module.parseJSONC;
+    deepMerge = module.deepMerge;
+    findNewFields = module.findNewFields;
+    getDefaultConfigObject = module.getDefaultConfigObject;
+    formatJSON = module.formatJSON;
   });
   
   afterEach(() => {
     cleanupTestTempDir();
+  });
+
+  // ============================================================
+  // UTILITY FUNCTIONS (Task T.1)
+  // ============================================================
+
+  describe('parseJSONC', () => {
+    test('strips single-line comments', () => {
+      const jsonc = '{\n  // comment\n  "key": "value"\n}';
+      const result = parseJSONC(jsonc);
+      expect(result).toEqual({ key: "value" });
+    });
+
+    test('strips multi-line comments', () => {
+      const jsonc = '{\n  /* comment \n multi-line */\n  "key": "value"\n}';
+      const result = parseJSONC(jsonc);
+      expect(result).toEqual({ key: "value" });
+    });
+
+    test('preserves strings containing //', () => {
+      const jsonc = '{"url": "https://example.com"}';
+      const result = parseJSONC(jsonc);
+      expect(result).toEqual({ url: "https://example.com" });
+    });
+
+    test('handles empty input', () => {
+      expect(() => parseJSONC('')).toThrow();
+    });
+
+    test('throws on invalid JSON after stripping', () => {
+      const jsonc = '{\n  // comment\n  "key": "value",\n}'; // Trailing comma not allowed in standard JSON
+      expect(() => parseJSONC(jsonc)).toThrow();
+    });
+  });
+
+  describe('deepMerge', () => {
+    test('user values override defaults', () => {
+      const defaults = { a: 1, b: 2 };
+      const user = { b: 3 };
+      const result = deepMerge(defaults, user);
+      expect(result).toEqual({ a: 1, b: 3 });
+    });
+
+    test('new keys from defaults are added', () => {
+      const defaults = { a: 1, b: 2 };
+      const user = { a: 0 };
+      const result = deepMerge(defaults, user);
+      expect(result).toEqual({ a: 0, b: 2 });
+    });
+
+    test('nested objects are recursively merged', () => {
+      const defaults = { nested: { a: 1, b: 2 } };
+      const user = { nested: { b: 3 } };
+      const result = deepMerge(defaults, user);
+      expect(result).toEqual({ nested: { a: 1, b: 3 } });
+    });
+
+    test('arrays are NOT merged (user wins)', () => {
+      const defaults = { list: [1, 2] };
+      const user = { list: [3] };
+      const result = deepMerge(defaults, user);
+      expect(result).toEqual({ list: [3] });
+    });
+
+    test('null/undefined user values use defaults', () => {
+      const defaults = { a: 1 };
+      expect(deepMerge(defaults, null)).toEqual({ a: 1 });
+      expect(deepMerge(defaults, undefined)).toEqual({ a: 1 });
+    });
+
+    test('handles circular references gracefully', () => {
+      const defaults = { a: 1 };
+      const user = { b: 2 };
+      user.self = user;
+      // Should not throw, but behavior for circular is "keep user's value"
+      const result = deepMerge(defaults, user);
+      expect(result.b).toBe(2);
+      expect(result.self).toBe(user);
+    });
+  });
+
+  describe('findNewFields', () => {
+    test('identifies top-level new fields', () => {
+      const defaults = { a: 1, b: 2 };
+      const user = { a: 1 };
+      const result = findNewFields(defaults, user);
+      expect(result).toEqual(['b']);
+    });
+
+    test('identifies nested new fields with dot notation', () => {
+      const defaults = { nested: { a: 1, b: 2 } };
+      const user = { nested: { a: 1 } };
+      const result = findNewFields(defaults, user);
+      expect(result).toEqual(['nested.b']);
+    });
+
+    test('returns empty array when no new fields', () => {
+      const defaults = { a: 1 };
+      const user = { a: 1, b: 2 };
+      const result = findNewFields(defaults, user);
+      expect(result).toEqual([]);
+    });
+
+    test('handles arrays correctly (not recursed)', () => {
+      const defaults = { list: [1, 2] };
+      const user = { list: [1] };
+      const result = findNewFields(defaults, user);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getDefaultConfigObject', () => {
+    test('returns object with all expected keys', () => {
+      const config = getDefaultConfigObject();
+      expect(config).toHaveProperty('enabled');
+      expect(config).toHaveProperty('notificationMode');
+      expect(config).toHaveProperty('idleTTSMessages');
+    });
+
+    test('all default values are valid types', () => {
+      const config = getDefaultConfigObject();
+      expect(typeof config.enabled).toBe('boolean');
+      expect(Array.isArray(config.idleTTSMessages)).toBe(true);
+    });
+
+    test('_configVersion is null by default', () => {
+      const config = getDefaultConfigObject();
+      expect(config._configVersion).toBeNull();
+    });
+  });
+
+  describe('formatJSON', () => {
+    test('outputs valid JSON string', () => {
+      const data = { a: 1 };
+      const result = formatJSON(data);
+      expect(JSON.parse(result)).toEqual(data);
+    });
+
+    test('applies indentation correctly', () => {
+      const data = { a: 1 };
+      const result = formatJSON(data, 4);
+      // First line should not be indented, subsequent lines should
+      expect(result).toContain('\n    ');
+    });
   });
 
   // ============================================================
