@@ -11,7 +11,7 @@
 
 > **Disclaimer**: This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://opencode.ai) in any way. It is an independent community plugin.
 
-A smart voice notification plugin for [OpenCode](https://opencode.ai) with **multiple TTS engines** and an intelligent reminder system.
+A smart voice notification plugin for [OpenCode](https://opencode.ai) with **multiple TTS engines**, native desktop notifications, and an intelligent reminder system.
 
 <img width="1456" height="720" alt="image" src="https://github.com/user-attachments/assets/52ccf357-2548-400b-a346-6362f2fc3180" />
 
@@ -50,14 +50,31 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - **Smart fallback**: Automatically falls back to static messages if AI is unavailable
 
 ### System Integration
+- **Native Desktop Notifications**: Windows (Toast), macOS (Notification Center), and Linux (notify-send) support
 - **Native Edge TTS**: No external dependencies (Python/pip) required
-- Wake monitor from sleep before notifying
-- Auto-boost volume if too low
-- TUI toast notifications
-- Cross-platform support (Windows, macOS, Linux)
 - **Focus Detection** (macOS): Suppresses notifications when terminal is focused
 - **Webhook Integration**: Receive notifications on Discord or any custom webhook endpoint when tasks finish or need attention
 - **Themed Sound Packs**: Use custom sound collections (e.g., Warcraft, StarCraft) by simply pointing to a directory
+- **Per-Project Sounds**: Assign unique sounds to different projects for easy identification
+- **Wake monitor** from sleep before notifying
+- **Auto-boost volume** if too low
+- **TUI toast** notifications
+
+## Feature Comparison
+
+How does this plugin compare to other OpenCode notification alternatives?
+
+| Feature | **Smart Voice Notify** | opencode-notify | discord-notify | warcraft-notify |
+|---------|:---:|:---:|:---:|:---:|
+| **TTS Support** | ✅ (4 Engines) | ❌ | ❌ | ❌ |
+| **Sound Playback** | ✅ | ✅ | ❌ | ✅ |
+| **Desktop Notifications** | ✅ | ✅ | ❌ | ❌ |
+| **Discord Webhooks** | ✅ | ❌ | ✅ | ❌ |
+| **AI Messages** | ✅ | ❌ | ❌ | ❌ |
+| **Reminders/Backoff** | ✅ | ❌ | ❌ | ❌ |
+| **Focus Detection** | ✅ (macOS) | ✅ | ❌ | ❌ |
+| **Sound Themes** | ✅ | ❌ | ❌ | ✅ |
+| **Project Specific Sounds** | ✅ | ❌ | ❌ | ❌ |
 
 ## Installation
 
@@ -115,13 +132,6 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
 
 ```jsonc
 {
-    // ============================================================
-    // OpenCode Smart Voice Notify - Quick Start Configuration
-    // ============================================================
-    // For ALL available options, see example.config.jsonc in the plugin.
-    // The plugin auto-creates a comprehensive config on first run.
-    // ============================================================
-
     // Master switch to enable/disable the plugin without uninstalling
     "enabled": true,
 
@@ -146,31 +156,37 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
     "edgePitch": "+50Hz",
     "edgeRate": "+10%",
     
+    // Desktop Notifications
+    "enableDesktopNotification": true,
+    "desktopNotificationTimeout": 5,
+    "showProjectInNotification": true,
+
     // TTS reminder settings
     "enableTTSReminder": true,
     "ttsReminderDelaySeconds": 30,
     "enableFollowUpReminders": true,
-    "maxFollowUpReminders": 3,
     
+    // Focus Detection (macOS only)
+    "suppressWhenFocused": true,
+    "alwaysNotify": false,
+
     // AI-generated messages (optional - requires local AI server)
     "enableAIMessages": false,
     "aiEndpoint": "http://localhost:11434/v1",
-    "aiModel": "llama3",
-    "aiApiKey": "",
-    "aiFallbackToStatic": true,
     
     // Webhook settings (optional - works with Discord)
     "enableWebhook": false,
     "webhookUrl": "",
     "webhookUsername": "OpenCode Notify",
-    "webhookMentionOnPermission": false,
     
     // Sound theme settings (optional)
     "soundThemeDir": "", // Path to custom sound theme directory
-    "randomizeSoundFromTheme": true, // Pick random sound from theme subfolders
     
-    // General settings
+    // Per-project sounds
+    "perProjectSounds": false,
+    "projectSoundSeed": 0,
 
+    // General settings
     "wakeMonitor": true,
     "forceVolume": true,
     "volumeThreshold": 50,
@@ -308,6 +324,18 @@ You can replace individual sound files with entire "Sound Themes" (like the clas
 
 ## Requirements
 
+### Platform Support Matrix
+
+| Feature | Windows | macOS | Linux |
+|---------|:---:|:---:|:---:|
+| **Sound Playback** | ✅ | ✅ | ✅ |
+| **TTS (Cloud/Edge)** | ✅ | ✅ | ✅ |
+| **TTS (Windows SAPI)** | ✅ | ❌ | ❌ |
+| **Desktop Notifications** | ✅ | ✅ | ✅ (req libnotify) |
+| **Focus Detection** | ❌ | ✅ | ❌ |
+| **Webhook Integration** | ✅ | ✅ | ✅ |
+| **Wake Monitor** | ✅ | ✅ | ✅ (X11/Gnome) |
+| **Volume Control** | ✅ | ✅ | ✅ (Pulse/ALSA) |
 
 ### For OpenAI-Compatible TTS
 - Any server implementing the `/v1/audio/speech` endpoint
@@ -367,7 +395,6 @@ Focus detection suppresses sound and desktop notifications when the terminal is 
 | `session.idle` | Agent finished working - notify user |
 | `session.error` | Agent encountered an error - alert user |
 | `permission.asked` | Permission request (SDK v1.1.1+) - alert user |
-
 | `permission.updated` | Permission request (SDK v1.0.x) - alert user |
 | `permission.replied` | User responded - cancel pending reminders |
 | `question.asked` | Agent asks question (SDK v1.1.7+) - notify user |
@@ -419,10 +446,9 @@ bun test --coverage
 bun test --watch
 ```
 
-For more detailed testing guidelines, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+For more detailed testing guidelines and mock usage examples, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Updating
-
 
 OpenCode does not automatically update plugins. To update to the latest version:
 
