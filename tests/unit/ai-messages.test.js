@@ -1,32 +1,16 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { generateAIMessage, getSmartMessage, testAIConnection } from '../../util/ai-messages.js';
-
-// Mock the tts.js module
-mock.module('../../util/tts.js', () => ({
-  getTTSConfig: () => mockConfig
-}));
-
-let mockConfig = {
-  enableAIMessages: true,
-  aiEndpoint: 'http://localhost:11434/v1',
-  aiModel: 'llama3',
-  aiApiKey: 'test-key',
-  aiTimeout: 1000,
-  aiFallbackToStatic: true,
-  aiPrompts: {
-    idle: 'Generate a message for idle state',
-    permission: 'Generate a message for permission state',
-    question: 'Generate a message for question state'
-  }
-};
+import { createTestTempDir, cleanupTestTempDir, createTestConfig } from '../setup.js';
 
 describe('AI Message Generation Module', () => {
   let originalFetch;
 
   beforeEach(() => {
+    createTestTempDir();
     originalFetch = globalThis.fetch;
-    // Reset mock config
-    mockConfig = {
+    
+    // Set up default test configuration via file instead of mocking module
+    createTestConfig({
       enableAIMessages: true,
       aiEndpoint: 'http://localhost:11434/v1',
       aiModel: 'llama3',
@@ -38,16 +22,17 @@ describe('AI Message Generation Module', () => {
         permission: 'Generate a message for permission state',
         question: 'Generate a message for question state'
       }
-    };
+    });
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    cleanupTestTempDir();
   });
 
   describe('generateAIMessage()', () => {
     it('should return null when AI messages are disabled', async () => {
-      mockConfig.enableAIMessages = false;
+      createTestConfig({ enableAIMessages: false });
       const result = await generateAIMessage('idle');
       expect(result).toBeNull();
     });
@@ -198,13 +183,16 @@ describe('AI Message Generation Module', () => {
     });
 
     it('should fall back to random static message when AI disabled', async () => {
-      mockConfig.enableAIMessages = false;
+      createTestConfig({ enableAIMessages: false });
       const result = await getSmartMessage('idle', false, staticMessages);
       expect(staticMessages).toContain(result);
     });
 
     it('should return generic message when AI fails and fallback is disabled', async () => {
-      mockConfig.aiFallbackToStatic = false;
+      createTestConfig({ 
+        enableAIMessages: true,
+        aiFallbackToStatic: false 
+      });
       globalThis.fetch = mock(() => Promise.resolve({
         ok: false
       }));
@@ -214,7 +202,7 @@ describe('AI Message Generation Module', () => {
     });
 
     it('should handle empty static messages array', async () => {
-      mockConfig.enableAIMessages = false;
+      createTestConfig({ enableAIMessages: false });
       const result = await getSmartMessage('idle', false, []);
       expect(result).toBe('Notification');
     });
@@ -222,7 +210,7 @@ describe('AI Message Generation Module', () => {
 
   describe('testAIConnection()', () => {
     it('should return error if AI messages not enabled', async () => {
-      mockConfig.enableAIMessages = false;
+      createTestConfig({ enableAIMessages: false });
       const result = await testAIConnection();
       expect(result.success).toBe(false);
       expect(result.message).toBe('AI messages not enabled');
