@@ -259,6 +259,8 @@ const getDefaultConfigObject = () => ({
   webhookUsername: "OpenCode Notify",
   webhookEvents: ["idle", "permission", "error", "question"],
   webhookMentionOnPermission: false,
+  soundThemeDir: "",
+  randomizeSoundFromTheme: true,
   idleThresholdSeconds: 60,
   debugLog: false
 });
@@ -791,6 +793,26 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     
     // Mention @everyone on permission requests (Discord only)
     "webhookMentionOnPermission": ${overrides.webhookMentionOnPermission !== undefined ? overrides.webhookMentionOnPermission : false},
+    
+    // ============================================================
+    // SOUND THEME SETTINGS (Themed Sound Packs)
+    // ============================================================
+    // Configure a directory containing custom sound files for notifications.
+    // This allows you to use themed sound packs (e.g., Warcraft, StarCraft, etc.)
+    //
+    // Directory structure should contain:
+    //   /path/to/theme/idle/       - Sounds for task completion
+    //   /path/to/theme/permission/ - Sounds for permission requests
+    //   /path/to/theme/error/      - Sounds for agent errors
+    //   /path/to/theme/question/   - Sounds for agent questions
+    //
+    // If a specific event folder is missing, it falls back to default sounds.
+    
+    // Path to your custom sound theme directory (absolute path recommended)
+    "soundThemeDir": "${overrides.soundThemeDir || ''}",
+    
+    // Pick a random sound from the appropriate theme folder for each notification
+    "randomizeSoundFromTheme": ${overrides.randomizeSoundFromTheme !== undefined ? overrides.randomizeSoundFromTheme : true},
     
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},
