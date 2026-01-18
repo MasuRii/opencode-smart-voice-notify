@@ -3,6 +3,12 @@
 
 # OpenCode Smart Voice Notify
 
+[![Test](https://github.com/MasuRii/opencode-smart-voice-notify/actions/workflows/test.yml/badge.svg)](https://github.com/MasuRii/opencode-smart-voice-notify/actions/workflows/test.yml)
+![Coverage](https://img.shields.io/badge/coverage-86.73%25-brightgreen)
+![Version](https://img.shields.io/badge/version-1.2.5-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+
 > **Disclaimer**: This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://opencode.ai) in any way. It is an independent community plugin.
 
 A smart voice notification plugin for [OpenCode](https://opencode.ai) with **multiple TTS engines** and an intelligent reminder system.
@@ -398,7 +404,25 @@ To develop on this plugin locally:
    }
    ```
 
+### Testing
+
+The plugin uses [Bun](https://bun.sh)'s built-in test runner for unit and E2E tests.
+
+```bash
+# Run all tests
+bun test
+
+# Run tests with coverage
+bun test --coverage
+
+# Run tests in watch mode
+bun test --watch
+```
+
+For more detailed testing guidelines, see [CONTRIBUTING.md](./CONTRIBUTING.md) (coming soon).
+
 ## Updating
+
 
 OpenCode does not automatically update plugins. To update to the latest version:
 
