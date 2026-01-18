@@ -261,6 +261,8 @@ const getDefaultConfigObject = () => ({
   webhookMentionOnPermission: false,
   soundThemeDir: "",
   randomizeSoundFromTheme: true,
+  perProjectSounds: false,
+  projectSoundSeed: 0,
   idleThresholdSeconds: 60,
   debugLog: false
 });
@@ -813,6 +815,22 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     
     // Pick a random sound from the appropriate theme folder for each notification
     "randomizeSoundFromTheme": ${overrides.randomizeSoundFromTheme !== undefined ? overrides.randomizeSoundFromTheme : true},
+    
+    // ============================================================
+    // PER-PROJECT SOUND SETTINGS
+    // ============================================================
+    // Assign a unique notification sound to each project based on its path.
+    // This helps you distinguish which project is notifying you when working
+    // on multiple tasks simultaneously.
+    //
+    // Note: Requires sounds named 'ding1.mp3' through 'ding6.mp3' in your 
+    // assets/ folder. If disabled, default sound files are used.
+    
+    // Enable unique sounds per project
+    "perProjectSounds": ${overrides.perProjectSounds !== undefined ? overrides.perProjectSounds : false},
+    
+    // Seed value to change sound assignments (0-999)
+    "projectSoundSeed": ${overrides.projectSoundSeed !== undefined ? overrides.projectSoundSeed : 0},
     
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},

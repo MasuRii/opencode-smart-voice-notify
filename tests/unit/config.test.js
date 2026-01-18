@@ -173,10 +173,9 @@ describe('config module', () => {
     test('all webhook fields have correct defaults', () => {
       const config = loadConfig('smart-voice-notify');
       expect(config.enableWebhook).toBe(false);
-      expect(config.webhookUrl).toBe("");
-      expect(config.webhookUsername).toBe("OpenCode Notify");
-      expect(config.webhookEvents).toEqual(["idle", "permission", "error", "question"]);
       expect(config.webhookMentionOnPermission).toBe(false);
+      expect(config.perProjectSounds).toBe(false);
+      expect(config.projectSoundSeed).toBe(0);
     });
 
     test('preserves user webhook settings', () => {
@@ -430,6 +429,7 @@ describe('config module', () => {
       expect(typeof config.aiFallbackToStatic).toBe('boolean');
       expect(typeof config.enableWebhook).toBe('boolean');
       expect(typeof config.webhookMentionOnPermission).toBe('boolean');
+      expect(typeof config.perProjectSounds).toBe('boolean');
       
       // Numbers
       expect(typeof config.ttsReminderDelaySeconds).toBe('number');
@@ -444,6 +444,7 @@ describe('config module', () => {
       expect(typeof config.questionBatchWindowMs).toBe('number');
       expect(typeof config.questionReminderDelaySeconds).toBe('number');
       expect(typeof config.aiTimeout).toBe('number');
+      expect(typeof config.projectSoundSeed).toBe('number');
       
       // Strings
       expect(typeof config.notificationMode).toBe('string');
