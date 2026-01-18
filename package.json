@@ -54,6 +54,6 @@
     "node-notifier": "^10.0.1"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.1.23"
+    "@opencode-ai/plugin": "^1.1.8"
   }
 }
