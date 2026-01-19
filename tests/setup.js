@@ -383,6 +383,8 @@ export function createMockEvent(type, properties = {}) {
 export const mockEvents = {
   sessionIdle: (sessionID) => createMockEvent('session.idle', { sessionID }),
   
+  sessionError: (sessionID) => createMockEvent('session.error', { sessionID }),
+  
   sessionCreated: (sessionID) => createMockEvent('session.created', { sessionID }),
   
   permissionAsked: (id, sessionID) => createMockEvent('permission.asked', {

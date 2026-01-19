@@ -320,6 +320,42 @@ describe('config module', () => {
   });
 
   // ============================================================
+  // GRANULAR NOTIFICATION CONTROL (User Message Request)
+  // ============================================================
+
+  describe('granular notification control default values', () => {
+    test('returns true for all granular enable flags when no config file exists', () => {
+      const config = loadConfig('smart-voice-notify');
+      expect(config.enableIdleNotification).toBe(true);
+      expect(config.enablePermissionNotification).toBe(true);
+      expect(config.enableQuestionNotification).toBe(true);
+      expect(config.enableErrorNotification).toBe(false);
+      expect(config.enableIdleReminder).toBe(true);
+      expect(config.enablePermissionReminder).toBe(true);
+      expect(config.enableQuestionReminder).toBe(true);
+      expect(config.enableErrorReminder).toBe(false);
+    });
+
+    test('preserves user granular enable flags', () => {
+      createTestConfig({
+        _configVersion: '1.0.0',
+        enableIdleNotification: false,
+        enablePermissionNotification: true,
+        enableErrorNotification: false,
+        enableIdleReminder: false
+      });
+
+      const config = loadConfig('smart-voice-notify');
+      expect(config.enableIdleNotification).toBe(false);
+      expect(config.enablePermissionNotification).toBe(true);
+      expect(config.enableQuestionNotification).toBe(true); // Default
+      expect(config.enableErrorNotification).toBe(false);
+      expect(config.enableIdleReminder).toBe(false);
+      expect(config.enablePermissionReminder).toBe(true); // Default
+    });
+  });
+
+  // ============================================================
   // WEBHOOK NOTIFICATION CONFIG FIELDS (Task 4.2)
   // ============================================================
 
