@@ -33,6 +33,7 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - **Sound-only mode**: Just play sounds, no TTS
 
 ### Intelligent Reminders
+- **Granular Control**: Enable or disable notifications and reminders for specific event types (Idle, Permission, Question, Error) via configuration.
 - Delayed TTS reminders if user doesn't respond within configurable time
 - Follow-up reminders with exponential backoff
 - Automatic cancellation when user responds
