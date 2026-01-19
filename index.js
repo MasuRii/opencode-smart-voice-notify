@@ -385,6 +385,24 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
+    // Granular reminder control
+    if (type === 'idle' && config.enableIdleReminder === false) {
+      debugLog(`scheduleTTSReminder: idle reminders disabled via config`);
+      return;
+    }
+    if (type === 'permission' && config.enablePermissionReminder === false) {
+      debugLog(`scheduleTTSReminder: permission reminders disabled via config`);
+      return;
+    }
+    if (type === 'question' && config.enableQuestionReminder === false) {
+      debugLog(`scheduleTTSReminder: question reminders disabled via config`);
+      return;
+    }
+    if (type === 'error' && config.enableErrorReminder === false) {
+      debugLog(`scheduleTTSReminder: error reminders disabled via config`);
+      return;
+    }
+
     // Get delay from config (in seconds, convert to ms)
     let delaySeconds;
     if (type === 'permission') {
@@ -1029,6 +1047,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         // AI message generation can take 3-15+ seconds, which was delaying sound playback.
         // ========================================
         if (event.type === "session.idle") {
+          // Check if idle notifications are enabled
+          if (config.enableIdleNotification === false) {
+            debugLog('session.idle: skipped (enableIdleNotification=false)');
+            return;
+          }
+
           const sessionID = event.properties?.sessionID;
           if (!sessionID) return;
 
@@ -1107,6 +1131,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         // AI message generation can take 3-15+ seconds, which was delaying sound playback.
         // ========================================
         if (event.type === "session.error") {
+          // Check if error notifications are enabled
+          if (config.enableErrorNotification === false) {
+            debugLog('session.error: skipped (enableErrorNotification=false)');
+            return;
+          }
+
           const sessionID = event.properties?.sessionID;
           if (!sessionID) {
             debugLog(`session.error: skipped (no sessionID)`);
@@ -1185,6 +1215,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         // BATCHING: When multiple permissions arrive simultaneously (e.g., 5 at once),
         // we batch them into a single notification instead of playing 5 overlapping sounds.
         if (event.type === "permission.updated" || event.type === "permission.asked") {
+          // Check if permission notifications are enabled
+          if (config.enablePermissionNotification === false) {
+            debugLog(`${event.type}: skipped (enablePermissionNotification=false)`);
+            return;
+          }
+
           // Capture permissionID
           const permissionId = event.properties?.id;
           
@@ -1229,6 +1265,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         // we batch them into a single notification instead of playing overlapping sounds.
         // NOTE: Each question.asked event can contain multiple questions in its questions array.
         if (event.type === "question.asked") {
+          // Check if question notifications are enabled
+          if (config.enableQuestionNotification === false) {
+            debugLog('question.asked: skipped (enableQuestionNotification=false)');
+            return;
+          }
+
           // Capture question request ID and count of questions in this request
           const questionId = event.properties?.id;
           const questionsArray = event.properties?.questions;
