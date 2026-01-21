@@ -259,4 +259,140 @@ describe('AI Message Generation Module', () => {
       expect(result.message).toBe('Connection timed out');
     });
   });
+
+  describe('Context-Aware AI (aiContext parameter)', () => {
+    it('should inject project name into prompt when enableContextAwareAI is true', async () => {
+      createTestConfig({ 
+        enableAIMessages: true,
+        enableContextAwareAI: true,
+        aiPrompts: { idle: 'Test prompt' }
+      });
+      
+      globalThis.fetch = mock(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'AI generated message' } }]
+        })
+      }));
+
+      await generateAIMessage('idle', { projectName: 'MyProject' });
+      
+      expect(globalThis.fetch).toHaveBeenCalled();
+      const [, options] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(options.body);
+      expect(body.messages[1].content).toContain('MyProject');
+    });
+
+    it('should inject session title into prompt when provided', async () => {
+      createTestConfig({ 
+        enableAIMessages: true,
+        enableContextAwareAI: true,
+        aiPrompts: { idle: 'Test prompt' }
+      });
+      
+      globalThis.fetch = mock(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'AI generated message' } }]
+        })
+      }));
+
+      await generateAIMessage('idle', { sessionTitle: 'Fix login bug' });
+      
+      const [, options] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(options.body);
+      expect(body.messages[1].content).toContain('Fix login bug');
+    });
+
+    it('should inject session summary into prompt when provided', async () => {
+      createTestConfig({ 
+        enableAIMessages: true,
+        enableContextAwareAI: true,
+        aiPrompts: { idle: 'Test prompt' }
+      });
+      
+      globalThis.fetch = mock(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'AI generated message' } }]
+        })
+      }));
+
+      await generateAIMessage('idle', { 
+        sessionSummary: { files: 5, additions: 100, deletions: 20 }
+      });
+      
+      const [, options] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(options.body);
+      expect(body.messages[1].content).toContain('5 file');
+      expect(body.messages[1].content).toContain('+100');
+      expect(body.messages[1].content).toContain('-20');
+    });
+
+    it('should NOT inject context when enableContextAwareAI is false', async () => {
+      createTestConfig({ 
+        enableAIMessages: true,
+        enableContextAwareAI: false,
+        aiPrompts: { idle: 'Test prompt' }
+      });
+      
+      globalThis.fetch = mock(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'AI generated message' } }]
+        })
+      }));
+
+      await generateAIMessage('idle', { projectName: 'MyProject', sessionTitle: 'My Task' });
+      
+      const [, options] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(options.body);
+      // Should NOT contain context since feature is disabled
+      expect(body.messages[1].content).not.toContain('MyProject');
+      expect(body.messages[1].content).not.toContain('My Task');
+    });
+
+    it('should handle missing context gracefully', async () => {
+      createTestConfig({ 
+        enableAIMessages: true,
+        enableContextAwareAI: true,
+        aiPrompts: { idle: 'Test prompt' }
+      });
+      
+      globalThis.fetch = mock(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'Valid AI message here' } }]
+        })
+      }));
+
+      // No context provided - should not throw
+      const result = await generateAIMessage('idle', {});
+      expect(result).toBe('Valid AI message here');
+    });
+
+    it('should pass context through getSmartMessage', async () => {
+      createTestConfig({ 
+        enableAIMessages: true,
+        enableContextAwareAI: true,
+        aiPrompts: { idle: 'Test prompt' }
+      });
+      
+      globalThis.fetch = mock(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'Context-aware response' } }]
+        })
+      }));
+
+      const result = await getSmartMessage('idle', false, ['fallback'], {
+        projectName: 'TestProject'
+      });
+      
+      expect(result).toBe('Context-aware response');
+      const [, options] = globalThis.fetch.mock.calls[0];
+      const body = JSON.parse(options.body);
+      expect(body.messages[1].content).toContain('TestProject');
+    });
+  });
 });
