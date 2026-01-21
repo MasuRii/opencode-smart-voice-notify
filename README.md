@@ -172,7 +172,7 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
 
     // General settings
     "wakeMonitor": true,
-    "forceVolume": true,
+    "forceVolume": false,
     "volumeThreshold": 50,
     "enableToast": true,
     "enableSound": true,
@@ -223,11 +223,14 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
      "aiEndpoint": "http://localhost:11434/v1",
      "aiModel": "llama3",
      "aiApiKey": "",
-     "aiFallbackToStatic": true
+     "aiFallbackToStatic": true,
+     "enableContextAwareAI": false  // Set to true for personalized messages with project/task context
    }
    ```
 
 3. **The AI will generate unique messages** for each notification, which are then spoken by your TTS engine.
+
+4. **Context-Aware Messages** (optional): Enable `enableContextAwareAI` for personalized notifications that include project name, task title, and change summary (e.g., "Your work on MyProject is complete!").
 
 **Supported AI Servers:**
 | Server | Default Endpoint | API Key |
