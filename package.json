@@ -48,7 +48,7 @@
     "bun": ">=1.0.0"
   },
   "dependencies": {
-    "@elevenlabs/elevenlabs-js": "^2.31.0",
+    "@elevenlabs/elevenlabs-js": "^2.32.0",
     "detect-terminal": "^2.0.0",
     "msedge-tts": "^2.0.3",
     "node-notifier": "^10.0.1"
