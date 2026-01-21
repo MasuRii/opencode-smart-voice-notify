@@ -24,12 +24,30 @@ const debugLogToFile = (message, configDir) => {
 };
 
 /**
- * Basic JSONC parser that strips single-line and multi-line comments.
+ * Basic JSONC parser that strips single-line and multi-line comments,
+ * and handles trailing commas (which Prettier often adds).
  * @param {string} jsonc 
  * @returns {any}
  */
 export const parseJSONC = (jsonc) => {
-  const stripped = jsonc.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
+  // Step 1: Strip comments while preserving strings
+  // This regex matches strings (handling escaped quotes) or comments
+  // If it's a comment, we replace it with empty string
+  let stripped = jsonc.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
+  
+  // Step 2: Strip trailing commas (e.g. [1, 2,] or {"a":1,})
+  // This helps when formatters like Prettier are used
+  stripped = stripped.replace(/,(\s*[\]}])/g, '$1');
+  
+  // Step 3: Handle literal control characters that might be present
+  // JSON.parse fails on literal control characters (U+0000 to U+001F).
+  // Some are allowed as whitespace (space, tab, newline, cr), but literal 
+  // tabs or newlines INSIDE strings are strictly forbidden.
+  // We'll strip most of them, but preserve allowed whitespace outside strings.
+  // A safer approach for user-edited files is to remove characters that 
+  // definitely shouldn't be there.
+  stripped = stripped.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
   return JSON.parse(stripped);
 };
 
@@ -927,6 +945,10 @@ export const loadConfig = (name, defaults = {}) => {
   const pkg = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf-8'));
   const currentVersion = pkg.version;
 
+  // Get default config object with current version early so it can be used for peeking
+  const defaultConfig = getDefaultConfigObject();
+  defaultConfig._configVersion = currentVersion;
+
   // Always ensure bundled assets are present
   copyBundledAssets(configDir);
 
@@ -937,28 +959,50 @@ export const loadConfig = (name, defaults = {}) => {
       const content = fs.readFileSync(filePath, 'utf-8');
       existingConfig = parseJSONC(content);
     } catch (error) {
-      // If file is invalid JSONC, we'll create a fresh one
-      debugLogToFile(`Config file was invalid (${error.message}), creating fresh config`, configDir);
+      // If file is invalid JSONC, we'll use defaults for this run but NOT overwrite the user's file
+      // This prevents accidental loss of configuration due to a simple syntax error
+      debugLogToFile(`Warning: Config file at ${filePath} is invalid (${error.message}). Using default values for now. Please check your config for syntax errors.`, configDir);
+      existingConfig = null; // Forces CASE 1 logic but we'll modify it to avoid writing
+
+      // SMART PEEK: Even if parsing fails, try to see if "enabled" field is set to false/disabled
+      // to respect the user's intent to disable the plugin even with syntax errors.
+      try {
+        const rawContent = fs.readFileSync(filePath, 'utf-8');
+        // Match both boolean and string values for "enabled"
+        const enabledMatch = rawContent.match(/"enabled"\s*:\s*(false|true|"disabled"|"enabled"|'disabled'|'enabled')/i);
+        if (enabledMatch) {
+          const val = enabledMatch[1].replace(/["']/g, '').toLowerCase();
+          const isActuallyEnabled = (val === 'true' || val === 'enabled');
+          
+          // Inject into defaults and defaultConfig so it's picked up
+          defaults.enabled = isActuallyEnabled;
+          defaultConfig.enabled = isActuallyEnabled;
+          debugLogToFile(`Detected 'enabled: ${isActuallyEnabled}' via emergency regex peek (syntax error in file)`, configDir);
+        }
+      } catch (e) {
+        // Peek failed, just proceed with CASE 1
+      }
     }
+
   }
 
-  // Get default config object with current version
-  const defaultConfig = getDefaultConfigObject();
-  defaultConfig._configVersion = currentVersion;
-
-  // CASE 1: No existing config - create new file with full documentation
+  // CASE 1: No existing config (missing or invalid)
   if (!existingConfig) {
+
     try {
       // Ensure config directory exists
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
 
-      // Generate new config file with all documentation comments
-      const newConfigContent = generateDefaultConfig({}, currentVersion);
-      fs.writeFileSync(filePath, newConfigContent, 'utf-8');
-
-      debugLogToFile(`Initialized default config at ${filePath}`, configDir);
+      // ONLY write a fresh config file if it doesn't exist at all.
+      // If it exists but was invalid, we already logged a warning and we'll just return defaults.
+      if (!fs.existsSync(filePath)) {
+        // Generate new config file with all documentation comments
+        const newConfigContent = generateDefaultConfig({}, currentVersion);
+        fs.writeFileSync(filePath, newConfigContent, 'utf-8');
+        debugLogToFile(`Initialized default config at ${filePath}`, configDir);
+      }
 
       // Return the default config merged with any passed defaults
       return { ...defaults, ...defaultConfig };
@@ -967,6 +1011,7 @@ export const loadConfig = (name, defaults = {}) => {
       return { ...defaults, ...defaultConfig };
     }
   }
+
 
   // CASE 2: Existing config - smart merge to add new fields only
   // Find what new fields need to be added (for logging)

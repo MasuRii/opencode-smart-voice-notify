@@ -28,10 +28,16 @@ import { getProjectSound } from './util/per-project-sound.js';
  * @type {import("@opencode-ai/plugin").Plugin}
  */
 export default async function SmartVoiceNotifyPlugin({ project, client, $, directory, worktree }) {
-  const config = getTTSConfig();
+  let config = getTTSConfig();
+
 
   // Master switch: if plugin is disabled, return empty handlers immediately
-  if (config.enabled === false) {
+  // Handle both boolean false and string "false"/"disabled"
+  const isEnabledInitially = config.enabled !== false && 
+                             String(config.enabled).toLowerCase() !== 'false' && 
+                             String(config.enabled).toLowerCase() !== 'disabled';
+
+  if (!isEnabledInitially) {
     const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
     const logsDir = path.join(configDir, 'logs');
     const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
@@ -41,13 +47,15 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           fs.mkdirSync(logsDir, { recursive: true });
         }
         const timestamp = new Date().toISOString();
-        fs.appendFileSync(logFile, `[${timestamp}] Plugin disabled via config (enabled: false) - no event handlers registered\n`);
+        fs.appendFileSync(logFile, `[${timestamp}] Plugin disabled via config (enabled: ${config.enabled}) - no event handlers registered\n`);
       } catch (e) {}
     }
     return {};
   }
 
-  const tts = createTTS({ $, client });
+
+  let tts = createTTS({ $, client });
+
 
   const platform = os.platform();
 
@@ -921,7 +929,36 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
 
   return {
     event: async ({ event }) => {
+      // Reload config on every event to support live configuration changes
+      // without requiring a plugin restart.
+      config = getTTSConfig();
+      
+      // Update TTS utility instance with latest config
+      // Note: createTTS internally calls getTTSConfig(), so it will have up-to-date values
+      tts = createTTS({ $, client });
+
+      // Master switch check - if disabled, skip all event processing
+      // Handle both boolean false and string "false"/"disabled"
+      const isPluginEnabled = config.enabled !== false && 
+                             String(config.enabled).toLowerCase() !== 'false' && 
+                             String(config.enabled).toLowerCase() !== 'disabled';
+
+      if (!isPluginEnabled) {
+        // Cancel any pending reminders if the plugin was just disabled
+        if (pendingReminders.size > 0) {
+          debugLog('Plugin disabled via config - cancelling all pending reminders');
+          cancelAllPendingReminders();
+        }
+        
+        // Only log once per event to avoid flooding
+        if (event.type === "session.idle" || event.type === "permission.asked" || event.type === "question.asked") {
+          debugLog(`Plugin is disabled via config (enabled: ${config.enabled}) - skipping ${event.type}`);
+        }
+        return;
+      }
+
       try {
+
         // ========================================
         // USER ACTIVITY DETECTION
         // Cancels pending TTS reminders when user responds
