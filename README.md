@@ -3,9 +3,13 @@
 
 # OpenCode Smart Voice Notify
 
-![Coverage](https://img.shields.io/badge/coverage-86.73%25-brightgreen)
-![Version](https://img.shields.io/badge/version-1.2.5-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![npm version](https://img.shields.io/npm/v/opencode-smart-voice-notify?color=blue&logo=npm)](https://www.npmjs.com/package/opencode-smart-voice-notify)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-smart-voice-notify?color=blue&logo=npm)](https://www.npmjs.com/package/opencode-smart-voice-notify)
+[![GitHub release](https://img.shields.io/github/v/release/MasuRii/opencode-smart-voice-notify?logo=github)](https://github.com/MasuRii/opencode-smart-voice-notify/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/MasuRii/opencode-smart-voice-notify/test.yml?branch=master&logo=github&label=tests)](https://github.com/MasuRii/opencode-smart-voice-notify/actions/workflows/test.yml)
+[![License](https://img.shields.io/github/license/MasuRii/opencode-smart-voice-notify?color=green)](https://github.com/MasuRii/opencode-smart-voice-notify/blob/master/LICENSE)
+[![Node](https://img.shields.io/node/v/opencode-smart-voice-notify?color=brightgreen&logo=node.js)](https://nodejs.org)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?logo=windows-terminal)](https://github.com/MasuRii/opencode-smart-voice-notify#platform-support-matrix)
 
 
 > **Disclaimer**: This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://opencode.ai) in any way. It is an independent community plugin.
