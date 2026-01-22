@@ -30,6 +30,10 @@ import { getProjectSound } from './util/per-project-sound.js';
 export default async function SmartVoiceNotifyPlugin({ project, client, $, directory, worktree }) {
   let config = getTTSConfig();
 
+  // Derive project name from worktree path since SDK's Project type doesn't have a 'name' property
+  // Example: C:\Repository\opencode-smart-voice-notify -> opencode-smart-voice-notify
+  const derivedProjectName = worktree ? path.basename(worktree) : (directory ? path.basename(directory) : null);
+
 
   // Master switch: if plugin is disabled, return empty handlers immediately
   // Handle both boolean false and string "false"/"disabled"
@@ -212,8 +216,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     
     try {
       // Build options with project name if configured
+      // Note: SDK's Project type doesn't have 'name' property, so we use derivedProjectName
       const notifyOptions = {
-        projectName: config.showProjectInNotification && project?.name ? project.name : undefined,
+        projectName: config.showProjectInNotification && derivedProjectName ? derivedProjectName : undefined,
         timeout: config.desktopNotificationTimeout || 5,
         debugLog: config.debugLog,
         count: options.count || 1
@@ -263,8 +268,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     }
     
     try {
+      // Note: SDK's Project type doesn't have 'name' property, so we use derivedProjectName
       const webhookOptions = {
-        projectName: project?.name,
+        projectName: derivedProjectName,
         sessionId: options.sessionId,
         count: options.count || 1,
         username: config.webhookUsername,
@@ -460,11 +466,11 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
         const storedAiContext = reminder?.aiContext || {};
         let reminderMessage;
         if (type === 'permission') {
-          reminderMessage = await getPermissionMessage(storedCount, true);
+          reminderMessage = await getPermissionMessage(storedCount, true, storedAiContext);
         } else if (type === 'question') {
-          reminderMessage = await getQuestionMessage(storedCount, true);
+          reminderMessage = await getQuestionMessage(storedCount, true, storedAiContext);
         } else if (type === 'error') {
-          reminderMessage = await getErrorMessage(storedCount, true);
+          reminderMessage = await getErrorMessage(storedCount, true, storedAiContext);
         } else {
           // Pass stored AI context for idle reminders (context-aware AI feature)
           reminderMessage = await getSmartMessage('idle', true, config.idleReminderTTSMessages, storedAiContext);
@@ -519,11 +525,11 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
               const followUpAiContext = followUpReminder?.aiContext || {};
               let followUpMessage;
               if (type === 'permission') {
-                followUpMessage = await getPermissionMessage(followUpStoredCount, true);
+                followUpMessage = await getPermissionMessage(followUpStoredCount, true, followUpAiContext);
               } else if (type === 'question') {
-                followUpMessage = await getQuestionMessage(followUpStoredCount, true);
+                followUpMessage = await getQuestionMessage(followUpStoredCount, true, followUpAiContext);
               } else if (type === 'error') {
-                followUpMessage = await getErrorMessage(followUpStoredCount, true);
+                followUpMessage = await getErrorMessage(followUpStoredCount, true, followUpAiContext);
               } else {
                 // Pass stored AI context for idle follow-ups (context-aware AI feature)
                 followUpMessage = await getSmartMessage('idle', true, config.idleReminderTTSMessages, followUpAiContext);
@@ -630,16 +636,19 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
    * Uses AI generation when enabled, falls back to static messages
    * @param {number} count - Number of permission requests
    * @param {boolean} isReminder - Whether this is a reminder message
+   * @param {object} aiContext - Optional context for AI message generation (projectName, sessionTitle, etc.)
    * @returns {Promise<string>} The formatted message
    */
-  const getPermissionMessage = async (count, isReminder = false) => {
+  const getPermissionMessage = async (count, isReminder = false, aiContext = {}) => {
     const messages = isReminder 
       ? config.permissionReminderTTSMessages 
       : config.permissionTTSMessages;
     
     // If AI messages are enabled, ALWAYS try AI first (regardless of count)
     if (config.enableAIMessages) {
-      const aiMessage = await getSmartMessage('permission', isReminder, messages, { count, type: 'permission' });
+      // Merge count/type info with any provided context (projectName, sessionTitle, etc.)
+      const fullContext = { count, type: 'permission', ...aiContext };
+      const aiMessage = await getSmartMessage('permission', isReminder, messages, fullContext);
       // getSmartMessage returns static message as fallback, so if AI was attempted
       // and succeeded, we'll get the AI message. If it failed, we get static.
       // Check if we got a valid message (not the generic fallback)
@@ -669,16 +678,19 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
    * Uses AI generation when enabled, falls back to static messages
    * @param {number} count - Number of question requests
    * @param {boolean} isReminder - Whether this is a reminder message
+   * @param {object} aiContext - Optional context for AI message generation (projectName, sessionTitle, etc.)
    * @returns {Promise<string>} The formatted message
    */
-  const getQuestionMessage = async (count, isReminder = false) => {
+  const getQuestionMessage = async (count, isReminder = false, aiContext = {}) => {
     const messages = isReminder 
       ? config.questionReminderTTSMessages 
       : config.questionTTSMessages;
     
     // If AI messages are enabled, ALWAYS try AI first (regardless of count)
     if (config.enableAIMessages) {
-      const aiMessage = await getSmartMessage('question', isReminder, messages, { count, type: 'question' });
+      // Merge count/type info with any provided context (projectName, sessionTitle, etc.)
+      const fullContext = { count, type: 'question', ...aiContext };
+      const aiMessage = await getSmartMessage('question', isReminder, messages, fullContext);
       // getSmartMessage returns static message as fallback, so if AI was attempted
       // and succeeded, we'll get the AI message. If it failed, we get static.
       // Check if we got a valid message (not the generic fallback)
@@ -708,16 +720,19 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
    * Uses AI generation when enabled, falls back to static messages
    * @param {number} count - Number of errors
    * @param {boolean} isReminder - Whether this is a reminder message
+   * @param {object} aiContext - Optional context for AI message generation (projectName, sessionTitle, etc.)
    * @returns {Promise<string>} The formatted message
    */
-  const getErrorMessage = async (count, isReminder = false) => {
+  const getErrorMessage = async (count, isReminder = false, aiContext = {}) => {
     const messages = isReminder 
       ? config.errorReminderTTSMessages 
       : config.errorTTSMessages;
     
     // If AI messages are enabled, ALWAYS try AI first (regardless of count)
     if (config.enableAIMessages) {
-      const aiMessage = await getSmartMessage('error', isReminder, messages, { count, type: 'error' });
+      // Merge count/type info with any provided context (projectName, sessionTitle, etc.)
+      const fullContext = { count, type: 'error', ...aiContext };
+      const aiMessage = await getSmartMessage('error', isReminder, messages, fullContext);
       // getSmartMessage returns static message as fallback, so if AI was attempted
       // and succeeded, we'll get the AI message. If it failed, we get static.
       // Check if we got a valid message (not the generic fallback)
@@ -767,6 +782,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     // We track all IDs in the batch for proper cleanup
     activePermissionId = batch[0];
     
+    // Build context for AI message generation (context-aware AI feature)
+    // For permissions, we only have project name (no session fetch to avoid delay)
+    const aiContext = {
+      projectName: derivedProjectName
+    };
+    
     // Check if we should suppress sound/desktop notifications due to focus
     const suppressPermission = await shouldSuppressNotification();
     
@@ -810,20 +831,21 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
-    // Step 4: Generate AI message for reminder AFTER sound played
-    const reminderMessage = await getPermissionMessage(batchCount, true);
+    // Step 4: Generate AI message for reminder AFTER sound played (with context)
+    const reminderMessage = await getPermissionMessage(batchCount, true, aiContext);
     
     // Step 5: Schedule TTS reminder if enabled
     if (config.enableTTSReminder && reminderMessage) {
       scheduleTTSReminder('permission', reminderMessage, {
         fallbackSound: config.permissionSound,
-        permissionCount: batchCount
+        permissionCount: batchCount,
+        aiContext  // Pass context for follow-up reminders
       });
     }
     
     // Step 6: If TTS-first or both mode, generate and speak immediate message
     if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
-      const ttsMessage = await getPermissionMessage(batchCount, false);
+      const ttsMessage = await getPermissionMessage(batchCount, false, aiContext);
       await tts.wakeMonitor();
       await tts.forceVolume();
       await tts.speak(ttsMessage, {
@@ -867,6 +889,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
     // We track all IDs in the batch for proper cleanup
     activeQuestionId = batch[0]?.id;
     
+    // Build context for AI message generation (context-aware AI feature)
+    // For questions, we only have project name (no session fetch to avoid delay)
+    const aiContext = {
+      projectName: derivedProjectName
+    };
+    
     // Check if we should suppress sound/desktop notifications due to focus
     const suppressQuestion = await shouldSuppressNotification();
     
@@ -909,20 +937,21 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
-    // Step 4: Generate AI message for reminder AFTER sound played
-    const reminderMessage = await getQuestionMessage(totalQuestionCount, true);
+    // Step 4: Generate AI message for reminder AFTER sound played (with context)
+    const reminderMessage = await getQuestionMessage(totalQuestionCount, true, aiContext);
 
     // Step 5: Schedule TTS reminder if enabled
     if (config.enableTTSReminder && reminderMessage) {
       scheduleTTSReminder('question', reminderMessage, {
         fallbackSound: config.questionSound,
-        questionCount: totalQuestionCount
+        questionCount: totalQuestionCount,
+        aiContext  // Pass context for follow-up reminders
       });
     }
     
     // Step 6: If TTS-first or both mode, generate and speak immediate message
     if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
-      const ttsMessage = await getQuestionMessage(totalQuestionCount, false);
+      const ttsMessage = await getQuestionMessage(totalQuestionCount, false, aiContext);
       await tts.wakeMonitor();
       await tts.forceVolume();
       await tts.speak(ttsMessage, {
@@ -1116,8 +1145,9 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
           } catch (e) {}
 
           // Build context for AI message generation (used when enableContextAwareAI is true)
+          // Note: SDK's Project type doesn't have 'name' property, so we use derivedProjectName
           const aiContext = {
-            projectName: project?.name,
+            projectName: derivedProjectName,
             sessionTitle: sessionData?.title,
             sessionSummary: sessionData?.summary ? {
               files: sessionData.summary.files,
