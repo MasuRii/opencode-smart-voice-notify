@@ -242,6 +242,7 @@ describe('AI Message Generation Module', () => {
       expect(result.message).toContain('HTTP 404');
     });
 
+    // Timeout test needs longer than the 5000ms abort delay in testAIConnection
     it('should handle timeout', async () => {
       globalThis.fetch = mock(async (url, options) => {
         const { signal } = options;
@@ -257,7 +258,7 @@ describe('AI Message Generation Module', () => {
       const result = await testAIConnection();
       expect(result.success).toBe(false);
       expect(result.message).toBe('Connection timed out');
-    });
+    }, 10000); // Increase timeout to 10s to allow for the 5s abort
   });
 
   describe('Context-Aware AI (aiContext parameter)', () => {

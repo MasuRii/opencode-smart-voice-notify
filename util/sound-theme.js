@@ -51,6 +51,7 @@ export const listSoundsInTheme = (themeDir, eventType) => {
   try {
     return fs.readdirSync(subDir)
       .filter(file => AUDIO_EXTENSIONS.includes(path.extname(file).toLowerCase()))
+      .sort() // Sort alphabetically for consistent cross-platform behavior
       .map(file => path.join(subDir, file))
       .filter(filePath => fs.statSync(filePath).isFile());
   } catch (error) {
