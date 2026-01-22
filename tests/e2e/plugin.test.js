@@ -325,7 +325,8 @@ describe('Plugin E2E (Plugin Core)', () => {
       expect(mockShell.wasCalledWith('New-Object -ComObject SAPI.SpVoice')).toBe(false);
     });
 
-    test('should ignore message updates for already seen IDs', async () => {
+    // SAPI TTS is Windows-only, skip on other platforms
+    test.skipIf(!isWindows)('should ignore message updates for already seen IDs', async () => {
        createTestConfig(createMinimalConfig({ 
         enabled: true, 
         enableTTSReminder: true,
