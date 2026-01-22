@@ -451,6 +451,106 @@ rm -rf ~/.cache/opencode/node_modules/opencode-smart-voice-notify
 opencode
 ```
 
+## LLM Instructions
+
+> This section provides structured guidance for AI assistants (Claude, GPT, Cursor, Copilot, etc.) helping users set up and configure this plugin.
+
+### Quick Setup (Execute These Steps)
+
+When a user asks you to set up this plugin, follow these steps:
+
+1. **Add plugin to OpenCode config** - Edit `~/.config/opencode/opencode.json`:
+   ```json
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "plugin": ["opencode-smart-voice-notify@latest"]
+   }
+   ```
+
+2. **Run OpenCode once** - This auto-generates the configuration file at `~/.config/opencode/smart-voice-notify.jsonc`
+
+3. **Configure based on user's TTS preference**:
+   - **Free/No API key**: Use Edge TTS (default, works out of box)
+   - **High quality**: Use ElevenLabs (requires API key)
+   - **Self-hosted**: Use OpenAI-compatible endpoint (Kokoro, LocalAI, etc.)
+   - **Offline Windows**: Use Windows SAPI
+
+### Configuration Tasks
+
+#### Task: Enable ElevenLabs TTS
+```jsonc
+// In ~/.config/opencode/smart-voice-notify.jsonc
+{
+  "ttsEngine": "elevenlabs",
+  "elevenLabsApiKey": "USER_API_KEY_HERE",
+  "elevenLabsVoiceId": "cgSgspJ2msm6clMCkdW9"
+}
+```
+**Note**: User must get API key from https://elevenlabs.io/app/settings/api-keys
+
+#### Task: Enable OpenAI-Compatible TTS (Kokoro, LocalAI, etc.)
+```jsonc
+{
+  "ttsEngine": "openai",
+  "openaiTtsEndpoint": "http://localhost:8880",
+  "openaiTtsVoice": "af_heart",
+  "openaiTtsModel": "kokoro"
+}
+```
+**Note**: User must have a compatible TTS server running locally or remotely.
+
+#### Task: Enable Discord Webhook Notifications
+```jsonc
+{
+  "enableWebhook": true,
+  "webhookUrl": "https://discord.com/api/webhooks/...",
+  "webhookEvents": ["idle", "permission", "error", "question"],
+  "webhookMentionOnPermission": true
+}
+```
+
+#### Task: Enable AI-Generated Messages (requires local AI server)
+```jsonc
+{
+  "enableAIMessages": true,
+  "aiEndpoint": "http://localhost:11434/v1",
+  "aiModel": "llama3"
+}
+```
+**Note**: Requires Ollama, LM Studio, or similar running locally.
+
+#### Task: Set Up Custom Sound Theme
+```jsonc
+{
+  "soundThemeDir": "themes/warcraft2",
+  "randomizeSoundFromTheme": true
+}
+```
+**Directory structure**: `~/.config/opencode/themes/warcraft2/{idle,permission,error,question}/*.mp3`
+
+### Common Issues & Fixes
+
+| Issue | Solution |
+|-------|----------|
+| No sound playing | Check `"enableSound": true` and verify audio files exist in `~/.config/opencode/assets/` |
+| TTS not working | Try fallback: change `"ttsEngine"` to `"edge"` (free, no API key) |
+| ElevenLabs quota exceeded | Plugin auto-falls back to Edge TTS; or set `"ttsEngine": "edge"` |
+| Notifications too frequent | Increase `"ttsReminderDelaySeconds"` (default: 30) |
+| Want to disable completely | Set `"enabled": false` in config |
+
+### Platform-Specific Notes
+
+- **Windows**: All features supported, including SAPI offline TTS
+- **macOS**: Focus detection available (`"suppressWhenFocused": true`)
+- **Linux**: Requires `libnotify-bin` for desktop notifications: `sudo apt install libnotify-bin`
+
+### Done When
+
+The plugin is successfully configured when:
+- [ ] `~/.config/opencode/opencode.json` contains the plugin entry
+- [ ] `~/.config/opencode/smart-voice-notify.jsonc` exists with user's settings
+- [ ] Running `opencode` produces audio notification when agent finishes a task
+
 ## License
 
 MIT
