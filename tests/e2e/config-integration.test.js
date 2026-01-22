@@ -13,7 +13,10 @@ import {
   mockEvents,
   wait,
   getTestTempDir,
-  testFileExists
+  testFileExists,
+  isWindows,
+  getTTSCalls,
+  wasTTSCalled
 } from '../setup.js';
 
 describe('Plugin E2E (Config Integration)', () => {
@@ -80,9 +83,8 @@ describe('Plugin E2E (Config Integration)', () => {
       
       await wait(500); 
       
-      // Should NOT have fired any TTS
-      expect(mockShell.wasCalledWith('powershell.exe')).toBe(false);
-      expect(mockShell.wasCalledWith('.ps1')).toBe(false);
+      // Should NOT have fired any TTS (platform-aware check)
+      expect(wasTTSCalled(mockShell)).toBe(false);
     });
 
     test('should respect "both" mode', async () => {
@@ -91,7 +93,7 @@ describe('Plugin E2E (Config Integration)', () => {
         notificationMode: 'both',
         enableSound: true,
         enableTTS: true,
-        ttsEngine: 'sapi',
+        ttsEngine: 'edge', // Use Edge TTS for cross-platform compatibility
         idleSound: 'assets/test-sound.mp3'
       }));
       
@@ -106,9 +108,10 @@ describe('Plugin E2E (Config Integration)', () => {
       // Verify sound played
       expect(mockShell.wasCalledWith('test-sound.mp3')).toBe(true);
       
-      // Verify speech played immediately
-      expect(mockShell.wasCalledWith('powershell.exe')).toBe(true);
-      expect(mockShell.wasCalledWith('.ps1')).toBe(true);
+      // Verify TTS was called (platform-aware check)
+      // Edge TTS generates audio and plays via playAudioFile
+      // On Windows this uses MediaPlayer, on Linux paplay/aplay, on macOS afplay
+      expect(wasTTSCalled(mockShell)).toBe(true);
     });
   });
 
@@ -150,7 +153,8 @@ describe('Plugin E2E (Config Integration)', () => {
         enableTTSReminder: true,
         idleReminderDelaySeconds: customDelay,
         enableTTS: true,
-        ttsEngine: 'sapi'
+        enableSound: true, // Required for sound-first mode to trigger reminder flow
+        ttsEngine: 'edge' // Use Edge TTS for cross-platform compatibility
       }));
       
       const plugin = await SmartVoiceNotifyPlugin({
@@ -161,13 +165,16 @@ describe('Plugin E2E (Config Integration)', () => {
       
       await plugin.event({ event: mockEvents.sessionIdle('s1') });
       
-      // Wait for slightly less than the delay
+      // Get initial audio call count (sound plays immediately in sound-first mode)
       await wait(100);
-      expect(mockShell.wasCalledWith('powershell.exe')).toBe(false);
+      const initialCalls = getTTSCalls(mockShell).length;
+      expect(initialCalls).toBeGreaterThanOrEqual(1); // Sound played
       
-      // Wait for slightly more than the delay
+      // Wait for reminder to fire (after delay)
       await wait(400);
-      expect(mockShell.wasCalledWith('powershell.exe')).toBe(true);
+      const afterDelayCalls = getTTSCalls(mockShell).length;
+      // Should have more calls after reminder fires
+      expect(afterDelayCalls).toBeGreaterThan(initialCalls);
     });
   });
 

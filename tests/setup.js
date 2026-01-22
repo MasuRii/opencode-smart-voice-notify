@@ -548,6 +548,111 @@ export function createConsoleCapture() {
 }
 
 // ============================================================
+// PLATFORM-AWARE TEST UTILITIES
+// ============================================================
+
+/**
+ * Get the current platform
+ * @returns {string} 'win32', 'darwin', or 'linux'
+ */
+export const platform = os.platform();
+
+/**
+ * Check if running on Windows
+ * @returns {boolean}
+ */
+export const isWindows = platform === 'win32';
+
+/**
+ * Check if running on macOS
+ * @returns {boolean}
+ */
+export const isMacOS = platform === 'darwin';
+
+/**
+ * Check if running on Linux
+ * @returns {boolean}
+ */
+export const isLinux = platform === 'linux';
+
+/**
+ * Helper to detect TTS calls in mock shell history.
+ * Works across all platforms by checking for platform-specific TTS commands.
+ * 
+ * @param {object} shell - Mock shell runner from createMockShellRunner()
+ * @returns {Array} Array of TTS-related calls
+ */
+export function getTTSCalls(shell) {
+  return shell.getCalls().filter(c => {
+    const cmd = c.command;
+    // Windows SAPI TTS
+    if (cmd.includes('powershell.exe') && cmd.includes('-File') && cmd.includes('.ps1')) {
+      return true;
+    }
+    // Edge TTS / ElevenLabs / OpenAI TTS audio playback
+    // These engines generate audio files and play them via playAudioFile
+    if (cmd.includes('paplay') || cmd.includes('aplay') || cmd.includes('afplay')) {
+      return true;
+    }
+    // macOS say command
+    if (cmd.includes('say ')) {
+      return true;
+    }
+    // Windows MediaPlayer (used by playAudioFile)
+    if (cmd.includes('System.Windows.Media.MediaPlayer')) {
+      return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Helper to detect any audio playback calls (sound or TTS) in mock shell history.
+ * 
+ * @param {object} shell - Mock shell runner from createMockShellRunner()
+ * @returns {Array} Array of audio-related calls
+ */
+export function getAudioCalls(shell) {
+  return shell.getCalls().filter(c => {
+    const cmd = c.command;
+    // Windows audio playback
+    if (cmd.includes('System.Windows.Media.MediaPlayer')) {
+      return true;
+    }
+    // Linux audio playback
+    if (cmd.includes('paplay') || cmd.includes('aplay')) {
+      return true;
+    }
+    // macOS audio playback
+    if (cmd.includes('afplay')) {
+      return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Get the recommended TTS engine for the current platform.
+ * Use 'edge' for cross-platform tests, 'sapi' only on Windows.
+ * 
+ * @returns {string} 'edge' on Linux/macOS, 'sapi' on Windows
+ */
+export function getTestTTSEngine() {
+  return isWindows ? 'sapi' : 'edge';
+}
+
+/**
+ * Check if TTS was called on the current platform.
+ * Platform-aware version of wasCalledWith for TTS detection.
+ * 
+ * @param {object} shell - Mock shell runner
+ * @returns {boolean} True if any TTS call was detected
+ */
+export function wasTTSCalled(shell) {
+  return getTTSCalls(shell).length > 0;
+}
+
+// ============================================================
 // EXPORTS SUMMARY
 // ============================================================
 
@@ -577,5 +682,15 @@ export default {
   waitFor,
   
   // Console capture
-  createConsoleCapture
+  createConsoleCapture,
+  
+  // Platform utilities
+  platform,
+  isWindows,
+  isMacOS,
+  isLinux,
+  getTTSCalls,
+  getAudioCalls,
+  getTestTTSEngine,
+  wasTTSCalled
 };

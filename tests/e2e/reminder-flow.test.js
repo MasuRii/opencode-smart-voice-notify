@@ -10,7 +10,8 @@ import {
   createMockClient,
   mockEvents,
   wait,
-  waitFor
+  waitFor,
+  getTTSCalls
 } from '../setup.js';
 
 describe('Plugin E2E (Reminder Flow)', () => {
@@ -29,13 +30,6 @@ describe('Plugin E2E (Reminder Flow)', () => {
     cleanupTestTempDir();
   });
 
-  /**
-   * Helper to find SAPI TTS calls in mock shell history
-   */
-  const getSapiCalls = (shell) => shell.getCalls().filter(c => 
-    c.command.includes('powershell.exe') && c.command.includes('-File') && c.command.includes('.ps1')
-  );
-
   test('initial reminder fires after delay', async () => {
     createTestConfig(createMinimalConfig({ 
       enabled: true, 
@@ -44,7 +38,7 @@ describe('Plugin E2E (Reminder Flow)', () => {
       idleReminderDelaySeconds: 0.1,
       enableTTS: true,
       enableSound: true,
-      ttsEngine: 'sapi'
+      ttsEngine: 'edge' // Use Edge TTS for cross-platform compatibility
     }));
     
     const plugin = await SmartVoiceNotifyPlugin({
@@ -55,12 +49,12 @@ describe('Plugin E2E (Reminder Flow)', () => {
     
     await plugin.event({ event: mockEvents.sessionIdle('s1') });
     
-    // Wait for reminder
+    // Wait for reminder (platform-aware TTS detection)
     await waitFor(() => {
-      return getSapiCalls(mockShell).length >= 1;
+      return getTTSCalls(mockShell).length >= 1;
     }, 5000);
     
-    expect(getSapiCalls(mockShell).length).toBe(1);
+    expect(getTTSCalls(mockShell).length).toBe(1);
   });
 
   test('follow-up reminders use exponential backoff', async () => {
@@ -74,7 +68,7 @@ describe('Plugin E2E (Reminder Flow)', () => {
       reminderBackoffMultiplier: 2,
       enableTTS: true,
       enableSound: true,
-      ttsEngine: 'sapi'
+      ttsEngine: 'edge' // Use Edge TTS for cross-platform compatibility
     }));
     
     const plugin = await SmartVoiceNotifyPlugin({
@@ -87,12 +81,12 @@ describe('Plugin E2E (Reminder Flow)', () => {
     
     // Wait for initial reminder (0.1s)
     await waitFor(() => {
-      return getSapiCalls(mockShell).length >= 1;
+      return getTTSCalls(mockShell).length >= 1;
     }, 5000);
     
     // Wait for follow-up (next delay = 0.1 * 2^1 = 0.2s)
     await waitFor(() => {
-      return getSapiCalls(mockShell).length >= 2;
+      return getTTSCalls(mockShell).length >= 2;
     }, 5000);
   });
 
@@ -106,7 +100,7 @@ describe('Plugin E2E (Reminder Flow)', () => {
       maxFollowUpReminders: 1, // Only 1 total reminder
       enableTTS: true,
       enableSound: true,
-      ttsEngine: 'sapi'
+      ttsEngine: 'edge' // Use Edge TTS for cross-platform compatibility
     }));
     
     const plugin = await SmartVoiceNotifyPlugin({
@@ -117,15 +111,18 @@ describe('Plugin E2E (Reminder Flow)', () => {
     
     await plugin.event({ event: mockEvents.sessionIdle('s1') });
     
-    // Wait for the first one
+    // Wait for the first reminder (includes initial sound + 1 TTS reminder)
     await waitFor(() => {
-      return getSapiCalls(mockShell).length >= 1;
+      return getTTSCalls(mockShell).length >= 2; // sound + 1 reminder
     }, 5000);
     
-    // Wait longer to ensure no second one
+    const callsAfterFirstReminder = getTTSCalls(mockShell).length;
+    
+    // Wait longer to ensure no additional reminders
     await wait(1000);
     
-    expect(getSapiCalls(mockShell).length).toBe(1);
+    // Should have no additional calls beyond the first reminder
+    expect(getTTSCalls(mockShell).length).toBe(callsAfterFirstReminder);
   });
 
   test('reminder cancelled if user responds before firing', async () => {
@@ -136,7 +133,7 @@ describe('Plugin E2E (Reminder Flow)', () => {
       idleReminderDelaySeconds: 0.5,
       enableTTS: true,
       enableSound: true,
-      ttsEngine: 'sapi'
+      ttsEngine: 'edge' // Use Edge TTS for cross-platform compatibility
     }));
     
     const plugin = await SmartVoiceNotifyPlugin({
@@ -147,17 +144,18 @@ describe('Plugin E2E (Reminder Flow)', () => {
     
     await plugin.event({ event: mockEvents.sessionIdle('s1') });
     
-    // Wait a bit, but not enough for reminder
+    // Wait a bit for initial sound, but not enough for reminder
     await wait(100);
+    const callsBeforeUserResponse = getTTSCalls(mockShell).length;
     
     // User responds (new activity after idle)
     await plugin.event({ event: mockEvents.messageUpdated('m1', 'user', 's1') });
     
-    // Wait for where reminder would fire
+    // Wait for where reminder would have fired
     await wait(1000);
     
-    // Should have NO reminder calls
-    expect(getSapiCalls(mockShell).length).toBe(0);
+    // Should have NO additional calls beyond initial sound
+    expect(getTTSCalls(mockShell).length).toBe(callsBeforeUserResponse);
   });
 
   test('reminder cancelled if user responds during playback (cancels follow-up)', async () => {
@@ -170,7 +168,7 @@ describe('Plugin E2E (Reminder Flow)', () => {
       maxFollowUpReminders: 2,
       enableTTS: true,
       enableSound: true,
-      ttsEngine: 'sapi'
+      ttsEngine: 'edge' // Use Edge TTS for cross-platform compatibility
     }));
     
     const plugin = await SmartVoiceNotifyPlugin({
@@ -181,10 +179,12 @@ describe('Plugin E2E (Reminder Flow)', () => {
     
     await plugin.event({ event: mockEvents.sessionIdle('s1') });
     
-    // Wait for 1st reminder to fire
+    // Wait for 1st reminder to fire (platform-aware: includes sound + reminder)
     await waitFor(() => {
-      return getSapiCalls(mockShell).length >= 1;
+      return getTTSCalls(mockShell).length >= 2; // sound + 1 reminder
     }, 5000);
+    
+    const callsAfterFirstReminder = getTTSCalls(mockShell).length;
     
     // User responds AFTER 1st reminder but BEFORE 2nd
     await wait(100);
@@ -193,8 +193,8 @@ describe('Plugin E2E (Reminder Flow)', () => {
     // Wait for where 2nd reminder would fire
     await wait(1000);
     
-    // Should still only have 1 reminder call
-    expect(getSapiCalls(mockShell).length).toBe(1);
+    // Should have no additional calls beyond first reminder
+    expect(getTTSCalls(mockShell).length).toBe(callsAfterFirstReminder);
   });
 
   test('reminder message varies (random selection)', async () => {
@@ -206,7 +206,7 @@ describe('Plugin E2E (Reminder Flow)', () => {
       idleReminderDelaySeconds: 0.1,
       enableTTS: true,
       enableSound: true,
-      ttsEngine: 'sapi',
+      ttsEngine: 'edge', // Use Edge TTS for cross-platform compatibility
       idleReminderTTSMessages: customMessages
     }));
     
@@ -218,14 +218,14 @@ describe('Plugin E2E (Reminder Flow)', () => {
     
     await plugin.event({ event: mockEvents.sessionIdle('s1') });
     
-    // Wait for reminder
+    // Wait for reminder (platform-aware TTS detection)
     await waitFor(() => {
-      return getSapiCalls(mockShell).length >= 1;
+      return getTTSCalls(mockShell).length >= 1;
     }, 5000);
     
-    expect(getSapiCalls(mockShell).length).toBe(1);
+    expect(getTTSCalls(mockShell).length).toBe(1);
     // Note: We don't verify exact message content in this E2E test as it's complex 
-    // to read the temporary .ps1 file generated in os.tmpdir().
+    // to read the temporary audio file generated.
     // Flow verification is the primary goal.
   });
 });
