@@ -319,7 +319,7 @@ export const createTTS = ({ $, client }) => {
       try { fs.unlinkSync(tempFile); } catch (e) {}
       return true;
     } catch (e) {
-      debugLog(`speakWithElevenLabs error: ${e.message}`);
+      debugLog(`speakWithElevenLabs error: ${e?.message || String(e) || 'Unknown error'}`);
       
       // Handle quota exceeded (401 specifically, or specific error message)
       const isQuotaError = 
@@ -357,7 +357,7 @@ export const createTTS = ({ $, client }) => {
       try { fs.unlinkSync(audioFilePath); } catch (e) {}
       return true;
     } catch (e) {
-      debugLog(`speakWithEdgeTTS error: ${e.message}`);
+      debugLog(`speakWithEdgeTTS error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     }
   };
@@ -366,7 +366,14 @@ export const createTTS = ({ $, client }) => {
    * Windows SAPI Engine (Offline, Built-in)
    */
   const speakWithSAPI = async (text) => {
-    if (platform !== 'win32' || !$) return false;
+    if (platform !== 'win32') {
+      debugLog('speakWithSAPI: skipped (not Windows)');
+      return false;
+    }
+    if (!$) {
+      debugLog('speakWithSAPI: skipped (shell helper $ not available)');
+      return false;
+    }
     const scriptPath = path.join(os.tmpdir(), `opencode-sapi-${Date.now()}.ps1`);
     try {
       const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -411,7 +418,7 @@ ${ssml}
       }
       return true;
     } catch (e) {
-      debugLog(`speakWithSAPI error: ${e.message}`);
+      debugLog(`speakWithSAPI error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     } finally {
       try { if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath); } catch (e) {}
@@ -427,7 +434,7 @@ ${ssml}
       await $`say ${text}`.quiet();
       return true;
     } catch (e) {
-      debugLog(`speakWithSay error: ${e.message}`);
+      debugLog(`speakWithSay error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     }
   };
@@ -485,7 +492,7 @@ ${ssml}
       try { fs.unlinkSync(tempFile); } catch (e) {}
       return true;
     } catch (e) {
-      debugLog(`speakWithOpenAI error: ${e.message}`);
+      debugLog(`speakWithOpenAI error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     }
   };
