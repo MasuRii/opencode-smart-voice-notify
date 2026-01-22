@@ -283,8 +283,10 @@ describe('Context-Aware AI Feature (Issue #9)', () => {
       const restoreFetch = createMockAIServer();
       
       try {
+        // SDK Project type has worktree, not name - plugin derives name from path.basename(worktree)
         const plugin = await SmartVoiceNotifyPlugin({
-          project: { name: 'DarkModeProject' },
+          project: { id: 'proj-1', worktree: '/path/to/DarkModeProject' },
+          worktree: '/path/to/DarkModeProject',
           client: mockClient,
           $: mockShell
         });
@@ -299,6 +301,7 @@ describe('Context-Aware AI Feature (Issue #9)', () => {
         expect(capturedPrompts.length).toBeGreaterThan(0);
         
         // Find the prompt that was sent (should contain our context)
+        // Project name is derived from worktree path: /path/to/DarkModeProject -> DarkModeProject
         const hasContextPrompt = capturedPrompts.some(p => 
           p.prompt.includes('Project: "DarkModeProject"') ||
           p.prompt.includes('Task: "Add dark mode feature"')
@@ -339,8 +342,10 @@ describe('Context-Aware AI Feature (Issue #9)', () => {
       const restoreFetch = createMockAIServer();
       
       try {
+        // SDK Project type has worktree, not name - plugin derives name from path.basename(worktree)
         const plugin = await SmartVoiceNotifyPlugin({
-          project: { name: 'HiddenProject' },
+          project: { id: 'proj-2', worktree: '/path/to/HiddenProject' },
+          worktree: '/path/to/HiddenProject',
           client: mockClient,
           $: mockShell
         });
