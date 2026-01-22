@@ -24,12 +24,30 @@ const debugLogToFile = (message, configDir) => {
 };
 
 /**
- * Basic JSONC parser that strips single-line and multi-line comments.
+ * Basic JSONC parser that strips single-line and multi-line comments,
+ * and handles trailing commas (which Prettier often adds).
  * @param {string} jsonc 
  * @returns {any}
  */
-const parseJSONC = (jsonc) => {
-  const stripped = jsonc.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
+export const parseJSONC = (jsonc) => {
+  // Step 1: Strip comments while preserving strings
+  // This regex matches strings (handling escaped quotes) or comments
+  // If it's a comment, we replace it with empty string
+  let stripped = jsonc.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => g ? "" : m);
+  
+  // Step 2: Strip trailing commas (e.g. [1, 2,] or {"a":1,})
+  // This helps when formatters like Prettier are used
+  stripped = stripped.replace(/,(\s*[\]}])/g, '$1');
+  
+  // Step 3: Handle literal control characters that might be present
+  // JSON.parse fails on literal control characters (U+0000 to U+001F).
+  // Some are allowed as whitespace (space, tab, newline, cr), but literal 
+  // tabs or newlines INSIDE strings are strictly forbidden.
+  // We'll strip most of them, but preserve allowed whitespace outside strings.
+  // A safer approach for user-edited files is to remove characters that 
+  // definitely shouldn't be there.
+  stripped = stripped.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
   return JSON.parse(stripped);
 };
 
@@ -39,7 +57,7 @@ const parseJSONC = (jsonc) => {
  * @param {number} indent 
  * @returns {string}
  */
-const formatJSON = (val, indent = 0) => {
+export const formatJSON = (val, indent = 0) => {
   const json = JSON.stringify(val, null, 4);
   return indent > 0 ? json.replace(/\n/g, '\n' + ' '.repeat(indent)) : json;
 };
@@ -54,7 +72,7 @@ const formatJSON = (val, indent = 0) => {
  * @param {object} user - The user's existing configuration object
  * @returns {object} Merged configuration with user values preserved
  */
-const deepMerge = (defaults, user) => {
+export const deepMerge = (defaults, user) => {
   // If user value doesn't exist, use default
   if (user === undefined || user === null) {
     return defaults;
@@ -90,11 +108,20 @@ const deepMerge = (defaults, user) => {
  * This is the source of truth for all default values.
  * @returns {object} Default configuration object
  */
-const getDefaultConfigObject = () => ({
+export const getDefaultConfigObject = () => ({
+
   _configVersion: null, // Will be set by caller
   enabled: true,
   notificationMode: 'sound-first',
   enableTTSReminder: true,
+  enableIdleNotification: true,
+  enablePermissionNotification: true,
+  enableQuestionNotification: true,
+  enableErrorNotification: false,
+  enableIdleReminder: true,
+  enablePermissionReminder: true,
+  enableQuestionReminder: true,
+  enableErrorReminder: false,
   ttsReminderDelaySeconds: 30,
   idleReminderDelaySeconds: 30,
   permissionReminderDelaySeconds: 20,
@@ -195,28 +222,75 @@ const getDefaultConfigObject = () => ({
   ],
   questionReminderDelaySeconds: 25,
   questionBatchWindowMs: 800,
+  errorTTSMessages: [
+    "Oops! Something went wrong. Please check for errors.",
+    "Alert! The agent encountered an error and needs your attention.",
+    "Error detected! Please review the issue when you can.",
+    "Houston, we have a problem! An error occurred during the task.",
+    "Heads up! There was an error that requires your attention."
+  ],
+  errorTTSMessagesMultiple: [
+    "Oops! There are {count} errors that need your attention.",
+    "Alert! The agent encountered {count} errors. Please review.",
+    "{count} errors detected! Please check when you can.",
+    "Houston, we have {count} problems! Multiple errors occurred.",
+    "Heads up! {count} errors require your attention."
+  ],
+  errorReminderTTSMessages: [
+    "Hey! There's still an error waiting for your attention.",
+    "Reminder: An error occurred and hasn't been addressed yet.",
+    "The agent is stuck! Please check the error when you can.",
+    "Still waiting! That error needs your attention.",
+    "Don't forget! There's an unresolved error in your session."
+  ],
+  errorReminderTTSMessagesMultiple: [
+    "Hey! There are still {count} errors waiting for your attention.",
+    "Reminder: {count} errors occurred and haven't been addressed yet.",
+    "The agent is stuck! Please check the {count} errors when you can.",
+    "Still waiting! {count} errors need your attention.",
+    "Don't forget! There are {count} unresolved errors in your session."
+  ],
+  errorReminderDelaySeconds: 20,
   enableAIMessages: false,
   aiEndpoint: 'http://localhost:11434/v1',
   aiModel: 'llama3',
   aiApiKey: '',
   aiTimeout: 15000,
   aiFallbackToStatic: true,
+  enableContextAwareAI: false,
   aiPrompts: {
     idle: "Generate a single brief, friendly notification sentence (max 15 words) saying a coding task is complete. Be encouraging and warm. Output only the message, no quotes.",
     permission: "Generate a single brief, urgent but friendly notification sentence (max 15 words) asking the user to approve a permission request. Output only the message, no quotes.",
     question: "Generate a single brief, polite notification sentence (max 15 words) saying the assistant has a question and needs user input. Output only the message, no quotes.",
+    error: "Generate a single brief, concerned but calm notification sentence (max 15 words) saying an error occurred and needs attention. Output only the message, no quotes.",
     idleReminder: "Generate a single brief, gentle reminder sentence (max 15 words) that a completed task is waiting for review. Be slightly more insistent. Output only the message, no quotes.",
     permissionReminder: "Generate a single brief, urgent reminder sentence (max 15 words) that permission approval is still needed. Convey importance. Output only the message, no quotes.",
-    questionReminder: "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes."
+    questionReminder: "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes.",
+    errorReminder: "Generate a single brief, urgent reminder sentence (max 15 words) that an error still needs attention. Convey urgency. Output only the message, no quotes."
   },
   idleSound: 'assets/Soft-high-tech-notification-sound-effect.mp3',
   permissionSound: 'assets/Machine-alert-beep-sound-effect.mp3',
   questionSound: 'assets/Machine-alert-beep-sound-effect.mp3',
+  errorSound: 'assets/Machine-alert-beep-sound-effect.mp3',
   wakeMonitor: true,
-  forceVolume: true,
+  forceVolume: false,
   volumeThreshold: 50,
   enableToast: true,
   enableSound: true,
+  enableDesktopNotification: true,
+  desktopNotificationTimeout: 5,
+  showProjectInNotification: true,
+  suppressWhenFocused: true,
+  alwaysNotify: false,
+  enableWebhook: false,
+  webhookUrl: "",
+  webhookUsername: "OpenCode Notify",
+  webhookEvents: ["idle", "permission", "error", "question"],
+  webhookMentionOnPermission: false,
+  soundThemeDir: "",
+  randomizeSoundFromTheme: true,
+  perProjectSounds: false,
+  projectSoundSeed: 0,
   idleThresholdSeconds: 60,
   debugLog: false
 });
@@ -229,7 +303,8 @@ const getDefaultConfigObject = () => ({
  * @param {string} prefix 
  * @returns {string[]} Array of field paths that were added
  */
-const findNewFields = (defaults, user, prefix = '') => {
+export const findNewFields = (defaults, user, prefix = '') => {
+
   const newFields = [];
   
   if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {
@@ -292,6 +367,25 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     // Master switch to enable or disable the entire plugin.
     // Set to false to disable all notifications without uninstalling.
     "enabled": ${overrides.enabled !== undefined ? overrides.enabled : true},
+
+    // ============================================================
+    // GRANULAR NOTIFICATION CONTROL
+    // ============================================================
+    // Enable or disable notifications for specific event types.
+    // If disabled, no sound, TTS, desktop, or webhook notifications
+    // will be sent for that specific category.
+    "enableIdleNotification": ${overrides.enableIdleNotification !== undefined ? overrides.enableIdleNotification : true},       // Agent finished work
+    "enablePermissionNotification": ${overrides.enablePermissionNotification !== undefined ? overrides.enablePermissionNotification : true}, // Agent needs permission
+    "enableQuestionNotification": ${overrides.enableQuestionNotification !== undefined ? overrides.enableQuestionNotification : true},     // Agent asks a question
+    "enableErrorNotification": ${overrides.enableErrorNotification !== undefined ? overrides.enableErrorNotification : false},       // Agent encountered an error
+
+    // Enable or disable reminders for specific event types.
+    // If disabled, the initial notification will still fire, but no
+    // follow-up TTS reminders will be scheduled.
+    "enableIdleReminder": ${overrides.enableIdleReminder !== undefined ? overrides.enableIdleReminder : true},
+    "enablePermissionReminder": ${overrides.enablePermissionReminder !== undefined ? overrides.enablePermissionReminder : true},
+    "enableQuestionReminder": ${overrides.enableQuestionReminder !== undefined ? overrides.enableQuestionReminder : true},
+    "enableErrorReminder": ${overrides.enableErrorReminder !== undefined ? overrides.enableErrorReminder : false},
 
     // ============================================================
     // NOTIFICATION MODE SETTINGS (Smart Notification System)
@@ -557,6 +651,51 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     "questionBatchWindowMs": ${overrides.questionBatchWindowMs !== undefined ? overrides.questionBatchWindowMs : 800},
     
     // ============================================================
+    // ERROR NOTIFICATION SETTINGS (Session Errors)
+    // ============================================================
+    // Notify users when the agent encounters an error during execution.
+    // Error notifications use more urgent messaging to get user attention.
+    
+    // Messages when agent encounters an error
+    "errorTTSMessages": ${formatJSON(overrides.errorTTSMessages || [
+        "Oops! Something went wrong. Please check for errors.",
+        "Alert! The agent encountered an error and needs your attention.",
+        "Error detected! Please review the issue when you can.",
+        "Houston, we have a problem! An error occurred during the task.",
+        "Heads up! There was an error that requires your attention."
+    ], 4)},
+    
+    // Messages for MULTIPLE errors (use {count} placeholder)
+    "errorTTSMessagesMultiple": ${formatJSON(overrides.errorTTSMessagesMultiple || [
+        "Oops! There are {count} errors that need your attention.",
+        "Alert! The agent encountered {count} errors. Please review.",
+        "{count} errors detected! Please check when you can.",
+        "Houston, we have {count} problems! Multiple errors occurred.",
+        "Heads up! {count} errors require your attention."
+    ], 4)},
+    
+    // Reminder messages for errors (more urgent - used after delay)
+    "errorReminderTTSMessages": ${formatJSON(overrides.errorReminderTTSMessages || [
+        "Hey! There's still an error waiting for your attention.",
+        "Reminder: An error occurred and hasn't been addressed yet.",
+        "The agent is stuck! Please check the error when you can.",
+        "Still waiting! That error needs your attention.",
+        "Don't forget! There's an unresolved error in your session."
+    ], 4)},
+    
+    // Reminder messages for MULTIPLE errors (use {count} placeholder)
+    "errorReminderTTSMessagesMultiple": ${formatJSON(overrides.errorReminderTTSMessagesMultiple || [
+        "Hey! There are still {count} errors waiting for your attention.",
+        "Reminder: {count} errors occurred and haven't been addressed yet.",
+        "The agent is stuck! Please check the {count} errors when you can.",
+        "Still waiting! {count} errors need your attention.",
+        "Don't forget! There are {count} unresolved errors in your session."
+    ], 4)},
+    
+    // Delay (in seconds) before error reminder fires (shorter than idle for urgency)
+    "errorReminderDelaySeconds": ${overrides.errorReminderDelaySeconds !== undefined ? overrides.errorReminderDelaySeconds : 20},
+    
+    // ============================================================
     // AI MESSAGE GENERATION (OpenAI-Compatible Endpoints)
     // ============================================================
     // Use a local/self-hosted AI to generate dynamic notification messages
@@ -592,6 +731,14 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     // Fallback to static preset messages if AI generation fails
     "aiFallbackToStatic": ${overrides.aiFallbackToStatic !== undefined ? overrides.aiFallbackToStatic : true},
     
+    // Enable context-aware AI messages (includes project name, task title, and change summary)
+    // When enabled, AI-generated notifications will include relevant context like:
+    // - Project name (e.g., "Your work on MyProject is complete!")
+    // - Task/session title if available
+    // - Change summary (files modified, lines added/deleted)
+    // Disabled by default - enable this for more personalized notifications
+    "enableContextAwareAI": ${overrides.enableContextAwareAI !== undefined ? overrides.enableContextAwareAI : false},
+    
     // Custom prompts for each notification type
     // The AI will generate a short message based on these prompts
     // Keep prompts concise - they're sent with each notification
@@ -599,9 +746,11 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
         "idle": "Generate a single brief, friendly notification sentence (max 15 words) saying a coding task is complete. Be encouraging and warm. Output only the message, no quotes.",
         "permission": "Generate a single brief, urgent but friendly notification sentence (max 15 words) asking the user to approve a permission request. Output only the message, no quotes.",
         "question": "Generate a single brief, polite notification sentence (max 15 words) saying the assistant has a question and needs user input. Output only the message, no quotes.",
+        "error": "Generate a single brief, concerned but calm notification sentence (max 15 words) saying an error occurred and needs attention. Output only the message, no quotes.",
         "idleReminder": "Generate a single brief, gentle reminder sentence (max 15 words) that a completed task is waiting for review. Be slightly more insistent. Output only the message, no quotes.",
         "permissionReminder": "Generate a single brief, urgent reminder sentence (max 15 words) that permission approval is still needed. Convey importance. Output only the message, no quotes.",
-        "questionReminder": "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes."
+        "questionReminder": "Generate a single brief, polite but persistent reminder sentence (max 15 words) that a question is still waiting for an answer. Output only the message, no quotes.",
+        "errorReminder": "Generate a single brief, urgent reminder sentence (max 15 words) that an error still needs attention. Convey urgency. Output only the message, no quotes."
     }, 4)},
     
     // ============================================================
@@ -615,6 +764,7 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     "idleSound": "${overrides.idleSound || 'assets/Soft-high-tech-notification-sound-effect.mp3'}",
     "permissionSound": "${overrides.permissionSound || 'assets/Machine-alert-beep-sound-effect.mp3'}",
     "questionSound": "${overrides.questionSound || 'assets/Machine-alert-beep-sound-effect.mp3'}",
+    "errorSound": "${overrides.errorSound || 'assets/Machine-alert-beep-sound-effect.mp3'}",
     
     // ============================================================
     // GENERAL SETTINGS
@@ -624,7 +774,7 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     "wakeMonitor": ${overrides.wakeMonitor !== undefined ? overrides.wakeMonitor : true},
     
     // Force system volume up if below threshold
-    "forceVolume": ${overrides.forceVolume !== undefined ? overrides.forceVolume : true},
+    "forceVolume": ${overrides.forceVolume !== undefined ? overrides.forceVolume : false},
     
     // Volume threshold (0-100): force volume if current level is below this
     "volumeThreshold": ${overrides.volumeThreshold !== undefined ? overrides.volumeThreshold : 50},
@@ -634,6 +784,109 @@ const generateDefaultConfig = (overrides = {}, version = '1.0.0') => {
     
     // Enable audio notifications (sound files and TTS)
     "enableSound": ${overrides.enableSound !== undefined ? overrides.enableSound : true},
+    
+    // ============================================================
+    // DESKTOP NOTIFICATION SETTINGS
+    // ============================================================
+    // Native desktop notifications (Windows Toast, macOS Notification Center, Linux notify-send)
+    // These appear as system notifications alongside sound and TTS.
+    //
+    // Note: On Linux, you may need to install libnotify-bin:
+    //   Ubuntu/Debian: sudo apt install libnotify-bin
+    //   Fedora: sudo dnf install libnotify
+    //   Arch: sudo pacman -S libnotify
+    
+    // Enable native desktop notifications
+    "enableDesktopNotification": ${overrides.enableDesktopNotification !== undefined ? overrides.enableDesktopNotification : true},
+    
+    // How long the notification stays on screen (in seconds)
+    // Note: Some platforms may ignore this (especially Windows 10+)
+    "desktopNotificationTimeout": ${overrides.desktopNotificationTimeout !== undefined ? overrides.desktopNotificationTimeout : 5},
+    
+    // Include the project name in notification titles for easier identification
+    // Example: "OpenCode - MyProject" instead of just "OpenCode"
+    "showProjectInNotification": ${overrides.showProjectInNotification !== undefined ? overrides.showProjectInNotification : true},
+    
+    // ============================================================
+    // FOCUS DETECTION SETTINGS
+    // ============================================================
+    // Suppress notifications when you're actively looking at the terminal.
+    // This prevents notifications from interrupting you when you're already
+    // paying attention to the OpenCode terminal.
+    //
+    // PLATFORM SUPPORT:
+    //   macOS:   Full support - Uses AppleScript to detect frontmost application
+    //   Windows: Not supported - No reliable API available
+    //   Linux:   Not supported - Varies by desktop environment
+    //
+    // When focus detection is not supported on your platform, notifications
+    // will always be sent (fail-open behavior).
+    
+    // Suppress sound and desktop notifications when terminal is focused
+    // TTS reminders are still allowed (user might step away after task completes)
+    "suppressWhenFocused": ${overrides.suppressWhenFocused !== undefined ? overrides.suppressWhenFocused : true},
+    
+    // Override focus detection: always send notifications even when terminal is focused
+    // Set to true to disable focus-based suppression entirely
+    "alwaysNotify": ${overrides.alwaysNotify !== undefined ? overrides.alwaysNotify : false},
+    
+    // ============================================================
+    // WEBHOOK NOTIFICATION SETTINGS (Discord/Generic)
+    // ============================================================
+    // Send notifications to a Discord webhook or any compatible endpoint.
+    // This allows you to receive notifications on your phone or other devices.
+    
+    // Enable webhook notifications
+    "enableWebhook": ${overrides.enableWebhook !== undefined ? overrides.enableWebhook : false},
+    
+    // Webhook URL (e.g., https://discord.com/api/webhooks/...)
+    "webhookUrl": "${overrides.webhookUrl || ''}",
+    
+    // Username to show in the webhook message
+    "webhookUsername": "${overrides.webhookUsername || 'OpenCode Notify'}",
+    
+    // Events that should trigger a webhook notification
+    // Options: "idle", "permission", "error", "question"
+    "webhookEvents": ${formatJSON(overrides.webhookEvents || ["idle", "permission", "error", "question"], 4)},
+    
+    // Mention @everyone on permission requests (Discord only)
+    "webhookMentionOnPermission": ${overrides.webhookMentionOnPermission !== undefined ? overrides.webhookMentionOnPermission : false},
+    
+    // ============================================================
+    // SOUND THEME SETTINGS (Themed Sound Packs)
+    // ============================================================
+    // Configure a directory containing custom sound files for notifications.
+    // This allows you to use themed sound packs (e.g., Warcraft, StarCraft, etc.)
+    //
+    // Directory structure should contain:
+    //   /path/to/theme/idle/       - Sounds for task completion
+    //   /path/to/theme/permission/ - Sounds for permission requests
+    //   /path/to/theme/error/      - Sounds for agent errors
+    //   /path/to/theme/question/   - Sounds for agent questions
+    //
+    // If a specific event folder is missing, it falls back to default sounds.
+    
+    // Path to your custom sound theme directory (absolute path recommended)
+    "soundThemeDir": "${overrides.soundThemeDir || ''}",
+    
+    // Pick a random sound from the appropriate theme folder for each notification
+    "randomizeSoundFromTheme": ${overrides.randomizeSoundFromTheme !== undefined ? overrides.randomizeSoundFromTheme : true},
+    
+    // ============================================================
+    // PER-PROJECT SOUND SETTINGS
+    // ============================================================
+    // Assign a unique notification sound to each project based on its path.
+    // This helps you distinguish which project is notifying you when working
+    // on multiple tasks simultaneously.
+    //
+    // Note: Requires sounds named 'ding1.mp3' through 'ding6.mp3' in your 
+    // assets/ folder. If disabled, default sound files are used.
+    
+    // Enable unique sounds per project
+    "perProjectSounds": ${overrides.perProjectSounds !== undefined ? overrides.perProjectSounds : false},
+    
+    // Seed value to change sound assignments (0-999)
+    "projectSoundSeed": ${overrides.projectSoundSeed !== undefined ? overrides.projectSoundSeed : 0},
     
     // Consider monitor asleep after this many seconds of inactivity (Windows only)
     "idleThresholdSeconds": ${overrides.idleThresholdSeconds !== undefined ? overrides.idleThresholdSeconds : 60},
@@ -701,6 +954,10 @@ export const loadConfig = (name, defaults = {}) => {
   const pkg = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf-8'));
   const currentVersion = pkg.version;
 
+  // Get default config object with current version early so it can be used for peeking
+  const defaultConfig = getDefaultConfigObject();
+  defaultConfig._configVersion = currentVersion;
+
   // Always ensure bundled assets are present
   copyBundledAssets(configDir);
 
@@ -711,28 +968,50 @@ export const loadConfig = (name, defaults = {}) => {
       const content = fs.readFileSync(filePath, 'utf-8');
       existingConfig = parseJSONC(content);
     } catch (error) {
-      // If file is invalid JSONC, we'll create a fresh one
-      debugLogToFile(`Config file was invalid (${error.message}), creating fresh config`, configDir);
+      // If file is invalid JSONC, we'll use defaults for this run but NOT overwrite the user's file
+      // This prevents accidental loss of configuration due to a simple syntax error
+      debugLogToFile(`Warning: Config file at ${filePath} is invalid (${error.message}). Using default values for now. Please check your config for syntax errors.`, configDir);
+      existingConfig = null; // Forces CASE 1 logic but we'll modify it to avoid writing
+
+      // SMART PEEK: Even if parsing fails, try to see if "enabled" field is set to false/disabled
+      // to respect the user's intent to disable the plugin even with syntax errors.
+      try {
+        const rawContent = fs.readFileSync(filePath, 'utf-8');
+        // Match both boolean and string values for "enabled"
+        const enabledMatch = rawContent.match(/"enabled"\s*:\s*(false|true|"disabled"|"enabled"|'disabled'|'enabled')/i);
+        if (enabledMatch) {
+          const val = enabledMatch[1].replace(/["']/g, '').toLowerCase();
+          const isActuallyEnabled = (val === 'true' || val === 'enabled');
+          
+          // Inject into defaults and defaultConfig so it's picked up
+          defaults.enabled = isActuallyEnabled;
+          defaultConfig.enabled = isActuallyEnabled;
+          debugLogToFile(`Detected 'enabled: ${isActuallyEnabled}' via emergency regex peek (syntax error in file)`, configDir);
+        }
+      } catch (e) {
+        // Peek failed, just proceed with CASE 1
+      }
     }
+
   }
 
-  // Get default config object with current version
-  const defaultConfig = getDefaultConfigObject();
-  defaultConfig._configVersion = currentVersion;
-
-  // CASE 1: No existing config - create new file with full documentation
+  // CASE 1: No existing config (missing or invalid)
   if (!existingConfig) {
+
     try {
       // Ensure config directory exists
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
 
-      // Generate new config file with all documentation comments
-      const newConfigContent = generateDefaultConfig({}, currentVersion);
-      fs.writeFileSync(filePath, newConfigContent, 'utf-8');
-
-      debugLogToFile(`Initialized default config at ${filePath}`, configDir);
+      // ONLY write a fresh config file if it doesn't exist at all.
+      // If it exists but was invalid, we already logged a warning and we'll just return defaults.
+      if (!fs.existsSync(filePath)) {
+        // Generate new config file with all documentation comments
+        const newConfigContent = generateDefaultConfig({}, currentVersion);
+        fs.writeFileSync(filePath, newConfigContent, 'utf-8');
+        debugLogToFile(`Initialized default config at ${filePath}`, configDir);
+      }
 
       // Return the default config merged with any passed defaults
       return { ...defaults, ...defaultConfig };
@@ -741,6 +1020,7 @@ export const loadConfig = (name, defaults = {}) => {
       return { ...defaults, ...defaultConfig };
     }
   }
+
 
   // CASE 2: Existing config - smart merge to add new fields only
   // Find what new fields need to be added (for logging)

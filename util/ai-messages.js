@@ -7,7 +7,32 @@
  * Uses native fetch() - no external dependencies required.
  */
 
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { getTTSConfig } from './tts.js';
+
+/**
+ * Debug logging to file (no console output).
+ * Logs are written to ~/.config/opencode/logs/smart-voice-notify-debug.log
+ * @param {string} message - Message to log
+ * @param {object} config - Config object with debugLog flag
+ */
+const debugLog = (message, config) => {
+  if (!config?.debugLog) return;
+  try {
+    const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
+    const logsDir = path.join(configDir, 'logs');
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
+    const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] [ai-messages] ${message}\n`);
+  } catch (e) {
+    // Silently fail - logging should never break the plugin
+  }
+};
 
 /**
  * Generate a message using an OpenAI-compatible AI endpoint
@@ -23,9 +48,12 @@ export async function generateAIMessage(promptType, context = {}) {
     return null;
   }
   
+  debugLog(`generateAIMessage: starting for promptType="${promptType}"`, config);
+  
   // Get the prompt for this type
   let prompt = config.aiPrompts?.[promptType];
   if (!prompt) {
+    debugLog(`generateAIMessage: no prompt found for type "${promptType}"`, config);
     return null;
   }
   
@@ -39,6 +67,44 @@ export async function generateAIMessage(promptType, context = {}) {
       itemType = 'permission requests';
     }
     prompt = `${prompt} Important: There are ${context.count} ${itemType} (not just one) waiting for the user's attention. Mention the count in your message.`;
+    debugLog(`generateAIMessage: injected count context (count=${context.count}, type=${context.type})`, config);
+  }
+  
+  // Inject session/project context if context-aware AI is enabled
+  if (config.enableContextAwareAI) {
+    debugLog(`generateAIMessage: context-aware AI is ENABLED`, config);
+    const contextParts = [];
+    
+    if (context.projectName) {
+      contextParts.push(`Project: "${context.projectName}"`);
+      debugLog(`generateAIMessage: context includes projectName="${context.projectName}"`, config);
+    }
+    
+    if (context.sessionTitle) {
+      contextParts.push(`Task: "${context.sessionTitle}"`);
+      debugLog(`generateAIMessage: context includes sessionTitle="${context.sessionTitle}"`, config);
+    }
+    
+    if (context.sessionSummary) {
+      const { files, additions, deletions } = context.sessionSummary;
+      if (files !== undefined || additions !== undefined || deletions !== undefined) {
+        const summaryParts = [];
+        if (files !== undefined) summaryParts.push(`${files} file(s) modified`);
+        if (additions !== undefined) summaryParts.push(`+${additions} lines`);
+        if (deletions !== undefined) summaryParts.push(`-${deletions} lines`);
+        contextParts.push(`Changes: ${summaryParts.join(', ')}`);
+        debugLog(`generateAIMessage: context includes sessionSummary (files=${files}, additions=${additions}, deletions=${deletions})`, config);
+      }
+    }
+    
+    if (contextParts.length > 0) {
+      prompt = `${prompt}\n\nContext for this notification:\n${contextParts.join('\n')}\n\nIncorporate relevant context into your message to make it more specific and helpful (e.g., mention the project name or what was worked on).`;
+      debugLog(`generateAIMessage: injected ${contextParts.length} context part(s) into prompt`, config);
+    } else {
+      debugLog(`generateAIMessage: no context available to inject (projectName, sessionTitle, sessionSummary all empty)`, config);
+    }
+  } else {
+    debugLog(`generateAIMessage: context-aware AI is DISABLED (enableContextAwareAI=${config.enableContextAwareAI})`, config);
   }
   
   try {
@@ -53,6 +119,8 @@ export async function generateAIMessage(promptType, context = {}) {
     if (!endpoint.endsWith('/chat/completions')) {
       endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
     }
+    
+    debugLog(`generateAIMessage: sending request to ${endpoint} (model=${config.aiModel || 'llama3'})`, config);
     
     // Create abort controller for timeout
     const controller = new AbortController();
@@ -83,6 +151,7 @@ export async function generateAIMessage(promptType, context = {}) {
     clearTimeout(timeout);
     
     if (!response.ok) {
+      debugLog(`generateAIMessage: API request failed with status ${response.status}`, config);
       return null;
     }
     
@@ -92,6 +161,7 @@ export async function generateAIMessage(promptType, context = {}) {
     const message = data.choices?.[0]?.message?.content?.trim();
     
     if (!message) {
+      debugLog(`generateAIMessage: API returned no message content`, config);
       return null;
     }
     
@@ -100,12 +170,15 @@ export async function generateAIMessage(promptType, context = {}) {
     
     // Validate message length (sanity check)
     if (cleanMessage.length < 5 || cleanMessage.length > 200) {
+      debugLog(`generateAIMessage: message length invalid (${cleanMessage.length} chars), rejecting`, config);
       return null;
     }
     
+    debugLog(`generateAIMessage: SUCCESS - generated message: "${cleanMessage.substring(0, 50)}${cleanMessage.length > 50 ? '...' : ''}"`, config);
     return cleanMessage;
     
   } catch (error) {
+    debugLog(`generateAIMessage: ERROR - ${error.name === 'AbortError' ? 'Request timed out' : error.message}`, config);
     return null;
   }
 }

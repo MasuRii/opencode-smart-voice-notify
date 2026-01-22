@@ -5,7 +5,15 @@ import { loadConfig } from './config.js';
 import { createLinuxPlatform } from './linux.js';
 
 const platform = os.platform();
-const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
+// Remove module-level configDir constant that caches process.env prematurely
+// const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
+
+/**
+ * Gets the current OpenCode config directory
+ * @returns {string}
+ */
+const getConfigDir = () => process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
+
 
 /**
  * Loads the TTS configuration (shared with the notification plugin)
@@ -188,7 +196,9 @@ let elevenLabsQuotaExceeded = false;
  */
 export const createTTS = ({ $, client }) => {
   const config = getTTSConfig();
+  const configDir = getConfigDir();
   const logsDir = path.join(configDir, 'logs');
+
   const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
   
   // Ensure logs directory exists if debug logging is enabled
@@ -309,7 +319,7 @@ export const createTTS = ({ $, client }) => {
       try { fs.unlinkSync(tempFile); } catch (e) {}
       return true;
     } catch (e) {
-      debugLog(`speakWithElevenLabs error: ${e.message}`);
+      debugLog(`speakWithElevenLabs error: ${e?.message || String(e) || 'Unknown error'}`);
       
       // Handle quota exceeded (401 specifically, or specific error message)
       const isQuotaError = 
@@ -347,7 +357,7 @@ export const createTTS = ({ $, client }) => {
       try { fs.unlinkSync(audioFilePath); } catch (e) {}
       return true;
     } catch (e) {
-      debugLog(`speakWithEdgeTTS error: ${e.message}`);
+      debugLog(`speakWithEdgeTTS error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     }
   };
@@ -356,7 +366,14 @@ export const createTTS = ({ $, client }) => {
    * Windows SAPI Engine (Offline, Built-in)
    */
   const speakWithSAPI = async (text) => {
-    if (platform !== 'win32' || !$) return false;
+    if (platform !== 'win32') {
+      debugLog('speakWithSAPI: skipped (not Windows)');
+      return false;
+    }
+    if (!$) {
+      debugLog('speakWithSAPI: skipped (shell helper $ not available)');
+      return false;
+    }
     const scriptPath = path.join(os.tmpdir(), `opencode-sapi-${Date.now()}.ps1`);
     try {
       const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -401,7 +418,7 @@ ${ssml}
       }
       return true;
     } catch (e) {
-      debugLog(`speakWithSAPI error: ${e.message}`);
+      debugLog(`speakWithSAPI error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     } finally {
       try { if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath); } catch (e) {}
@@ -417,7 +434,7 @@ ${ssml}
       await $`say ${text}`.quiet();
       return true;
     } catch (e) {
-      debugLog(`speakWithSay error: ${e.message}`);
+      debugLog(`speakWithSay error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     }
   };
@@ -475,7 +492,7 @@ ${ssml}
       try { fs.unlinkSync(tempFile); } catch (e) {}
       return true;
     } catch (e) {
-      debugLog(`speakWithOpenAI error: ${e.message}`);
+      debugLog(`speakWithOpenAI error: ${e?.message || String(e) || 'Unknown error'}`);
       return false;
     }
   };
@@ -645,7 +662,8 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
     if (activeConfig.fallbackSound) {
       const soundPath = path.isAbsolute(activeConfig.fallbackSound) 
         ? activeConfig.fallbackSound 
-        : path.join(configDir, activeConfig.fallbackSound);
+        : path.join(getConfigDir(), activeConfig.fallbackSound);
+
       await playAudioFile(soundPath, activeConfig.loops || 1);
     }
     return false;

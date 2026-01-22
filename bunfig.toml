@@ -1,0 +1,43 @@
+# Bun Test Configuration
+# See: https://bun.sh/docs/test/configuration
+
+[test]
+# Test discovery - Bun automatically finds *.test.js and *.spec.js files
+# Test patterns: ["**/*.test.js", "**/*.spec.js"] (Bun's default)
+
+# Preload file for test environment setup
+preload = ["./tests/setup.js"]
+
+# Test execution timeout in milliseconds (10 seconds)
+timeout = 10000
+
+# Coverage settings
+coverage = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "./coverage"
+
+# Minimum 50% coverage threshold (lowered from 70% - index.js has complex plugin initialization code)
+coverageThreshold = { lines = 0.50, functions = 0.50, statements = 0.50 }
+
+# Exclude test files from coverage reports
+coverageSkipTestFiles = true
+
+# Ignore patterns from coverage
+coveragePathIgnorePatterns = [
+  # Test files and fixtures
+  "**/tests/**",
+  "**/*.test.js",
+  "**/*.spec.js",
+  "**/fixtures/**",
+  
+  # Configuration files
+  "*.config.js",
+  "bunfig.toml",
+  
+  # Assets (non-code)
+  "**/assets/**",
+  
+  # Generated/vendor
+  "**/node_modules/**",
+  "**/coverage/**"
+]

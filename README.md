@@ -3,9 +3,14 @@
 
 # OpenCode Smart Voice Notify
 
+![Coverage](https://img.shields.io/badge/coverage-86.73%25-brightgreen)
+![Version](https://img.shields.io/badge/version-1.2.5-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+
 > **Disclaimer**: This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://opencode.ai) in any way. It is an independent community plugin.
 
-A smart voice notification plugin for [OpenCode](https://opencode.ai) with **multiple TTS engines** and an intelligent reminder system.
+A smart voice notification plugin for [OpenCode](https://opencode.ai) with **multiple TTS engines**, native desktop notifications, and an intelligent reminder system.
 
 <img width="1456" height="720" alt="image" src="https://github.com/user-attachments/assets/52ccf357-2548-400b-a346-6362f2fc3180" />
 
@@ -28,6 +33,7 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - **Sound-only mode**: Just play sounds, no TTS
 
 ### Intelligent Reminders
+- **Granular Control**: Enable or disable notifications and reminders for specific event types (Idle, Permission, Question, Error) via configuration.
 - Delayed TTS reminders if user doesn't respond within configurable time
 - Follow-up reminders with exponential backoff
 - Automatic cancellation when user responds
@@ -44,11 +50,15 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - **Smart fallback**: Automatically falls back to static messages if AI is unavailable
 
 ### System Integration
+- **Native Desktop Notifications**: Windows (Toast), macOS (Notification Center), and Linux (notify-send) support
 - **Native Edge TTS**: No external dependencies (Python/pip) required
-- Wake monitor from sleep before notifying
-- Auto-boost volume if too low
-- TUI toast notifications
-- Cross-platform support (Windows, macOS, Linux)
+- **Focus Detection** (macOS): Suppresses notifications when terminal is focused
+- **Webhook Integration**: Receive notifications on Discord or any custom webhook endpoint when tasks finish or need attention
+- **Themed Sound Packs**: Use custom sound collections (e.g., Warcraft, StarCraft) by simply pointing to a directory
+- **Per-Project Sounds**: Assign unique sounds to different projects for easy identification
+- **Wake monitor** from sleep before notifying
+- **Auto-boost volume** if too low
+- **TUI toast** notifications
 
 ## Installation
 
@@ -106,13 +116,6 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
 
 ```jsonc
 {
-    // ============================================================
-    // OpenCode Smart Voice Notify - Quick Start Configuration
-    // ============================================================
-    // For ALL available options, see example.config.jsonc in the plugin.
-    // The plugin auto-creates a comprehensive config on first run.
-    // ============================================================
-
     // Master switch to enable/disable the plugin without uninstalling
     "enabled": true,
 
@@ -137,22 +140,39 @@ If you prefer to create the config manually, add a `smart-voice-notify.jsonc` fi
     "edgePitch": "+50Hz",
     "edgeRate": "+10%",
     
+    // Desktop Notifications
+    "enableDesktopNotification": true,
+    "desktopNotificationTimeout": 5,
+    "showProjectInNotification": true,
+
     // TTS reminder settings
     "enableTTSReminder": true,
     "ttsReminderDelaySeconds": 30,
     "enableFollowUpReminders": true,
-    "maxFollowUpReminders": 3,
     
+    // Focus Detection (macOS only)
+    "suppressWhenFocused": true,
+    "alwaysNotify": false,
+
     // AI-generated messages (optional - requires local AI server)
     "enableAIMessages": false,
     "aiEndpoint": "http://localhost:11434/v1",
-    "aiModel": "llama3",
-    "aiApiKey": "",
-    "aiFallbackToStatic": true,
     
+    // Webhook settings (optional - works with Discord)
+    "enableWebhook": false,
+    "webhookUrl": "",
+    "webhookUsername": "OpenCode Notify",
+    
+    // Sound theme settings (optional)
+    "soundThemeDir": "", // Path to custom sound theme directory
+    
+    // Per-project sounds
+    "perProjectSounds": false,
+    "projectSoundSeed": 0,
+
     // General settings
     "wakeMonitor": true,
-    "forceVolume": true,
+    "forceVolume": false,
     "volumeThreshold": 50,
     "enableToast": true,
     "enableSound": true,
@@ -203,11 +223,14 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
      "aiEndpoint": "http://localhost:11434/v1",
      "aiModel": "llama3",
      "aiApiKey": "",
-     "aiFallbackToStatic": true
+     "aiFallbackToStatic": true,
+     "enableContextAwareAI": false  // Set to true for personalized messages with project/task context
    }
    ```
 
 3. **The AI will generate unique messages** for each notification, which are then spoken by your TTS engine.
+
+4. **Context-Aware Messages** (optional): Enable `enableContextAwareAI` for personalized notifications that include project name, task title, and change summary (e.g., "Your work on MyProject is complete!").
 
 **Supported AI Servers:**
 | Server | Default Endpoint | API Key |
@@ -218,7 +241,88 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
 | vLLM | `http://localhost:8000/v1` | Use "EMPTY" |
 | Jan.ai | `http://localhost:1337/v1` | Required |
 
+### Discord / Webhook Integration (Optional)
+
+Receive remote notifications on Discord or any custom endpoint. This is perfect for long-running tasks when you're away from your computer.
+
+1. **Create a Discord Webhook**:
+   - In Discord, go to **Server Settings** > **Integrations** > **Webhooks**.
+   - Click **New Webhook**, choose a channel, and click **Copy Webhook URL**.
+
+2. **Enable Webhooks in your config**:
+   ```jsonc
+   {
+     "enableWebhook": true,
+     "webhookUrl": "https://discord.com/api/webhooks/...",
+     "webhookUsername": "OpenCode Notify",
+     "webhookEvents": ["idle", "permission", "error", "question"],
+     "webhookMentionOnPermission": true
+   }
+   ```
+
+3. **Features**:
+   - **Color-coded Embeds**: Different colors for task completion (green), permissions (orange), errors (red), and questions (blue).
+   - **Smart Mentions**: Automatically @everyone on Discord for urgent permission requests.
+   - **Rate Limiting**: Intelligent retry logic with backoff if Discord's rate limits are hit.
+    - **Fire-and-forget**: Webhook requests never block local sound or TTS playback.
+
+**Supported Webhook Events:**
+| Event | Trigger |
+|-------|---------|
+| `idle` | Agent finished working |
+| `permission` | Agent needs permission for a tool |
+| `error` | Agent encountered an error |
+| `question` | Agent is asking you a question |
+
+
+### Custom Sound Themes (Optional)
+
+You can replace individual sound files with entire "Sound Themes" (like the classic Warcraft II or StarCraft sound packs).
+
+1. **Set up your theme directory**:
+   Create a folder (e.g., `~/.config/opencode/themes/warcraft2/`) with the following structure:
+   ```text
+   warcraft2/
+   ├── idle/          # Sounds for when the agent finishes
+   │   ├── job_done.mp3
+   │   └── alright.wav
+   ├── permission/    # Sounds for permission requests
+   │   ├── help.mp3
+   │   └── need_orders.wav
+   ├── error/         # Sounds for agent errors
+   │   └── alert.mp3
+   └── question/      # Sounds for agent questions
+       └── yes_milord.mp3
+   ```
+
+2. **Configure the theme in your config**:
+   ```jsonc
+   {
+     "soundThemeDir": "themes/warcraft2",
+     "randomizeSoundFromTheme": true
+   }
+   ```
+
+3. **Features**:
+   - **Automatic Fallback**: If a theme subdirectory or sound is missing, the plugin automatically falls back to your default sound files.
+   - **Randomization**: If multiple sounds are in a subdirectory, the plugin will pick one at random each time (if `randomizeSoundFromTheme` is `true`).
+   - **Relative Paths**: Paths are relative to your OpenCode config directory (`~/.config/opencode/`).
+
+
 ## Requirements
+
+### Platform Support Matrix
+
+| Feature | Windows | macOS | Linux |
+|---------|:---:|:---:|:---:|
+| **Sound Playback** | ✅ | ✅ | ✅ |
+| **TTS (Cloud/Edge)** | ✅ | ✅ | ✅ |
+| **TTS (Windows SAPI)** | ✅ | ❌ | ❌ |
+| **Desktop Notifications** | ✅ | ✅ | ✅ (req libnotify) |
+| **Focus Detection** | ❌ | ✅ | ❌ |
+| **Webhook Integration** | ✅ | ✅ | ✅ |
+| **Wake Monitor** | ✅ | ✅ | ✅ (X11/Gnome) |
+| **Volume Control** | ✅ | ✅ | ✅ (Pulse/ALSA) |
 
 ### For OpenAI-Compatible TTS
 - Any server implementing the `/v1/audio/speech` endpoint
@@ -235,16 +339,48 @@ If you want dynamic, AI-generated notification messages instead of preset ones, 
 ### For Windows SAPI
 - Windows OS (uses built-in System.Speech)
 
+### For Desktop Notifications
+- **Windows**: Built-in (uses Toast notifications)
+- **macOS**: Built-in (uses Notification Center)
+- **Linux**: Requires `notify-send` (libnotify)
+  ```bash
+  # Ubuntu/Debian
+  sudo apt install libnotify-bin
+
+  # Fedora
+  sudo dnf install libnotify
+
+  # Arch Linux
+  sudo pacman -S libnotify
+  ```
+
 ### For Sound Playback
 - **Windows**: Built-in (uses Windows Media Player)
 - **macOS**: Built-in (`afplay`)
 - **Linux**: `paplay` or `aplay`
+
+### For Focus Detection
+Focus detection suppresses sound and desktop notifications when the terminal is focused.
+
+| Platform | Support | Notes |
+|----------|---------|-------|
+| **macOS** | ✅ Full | Uses AppleScript to detect frontmost application |
+| **Windows** | ❌ Not supported | No reliable API available |
+| **Linux** | ❌ Not supported | Varies by desktop environment |
+
+> **Note**: On unsupported platforms, notifications are always sent (fail-open behavior). TTS reminders are never suppressed, even when focused, since users may step away after seeing the toast.
+
+### For Webhook Notifications
+- **Discord**: Full support for Discord's webhook embed format.
+- **Generic**: Works with any endpoint that accepts a POST request with a JSON body (though formatting is optimized for Discord).
+- **Rate Limits**: The plugin handles HTTP 429 (Too Many Requests) automatically with retries and a 250ms queue delay.
 
 ## Events Handled
 
 | Event | Action |
 |-------|--------|
 | `session.idle` | Agent finished working - notify user |
+| `session.error` | Agent encountered an error - alert user |
 | `permission.asked` | Permission request (SDK v1.1.1+) - alert user |
 | `permission.updated` | Permission request (SDK v1.0.x) - alert user |
 | `permission.replied` | User responded - cancel pending reminders |
@@ -281,6 +417,23 @@ To develop on this plugin locally:
      "plugin": ["file:///absolute/path/to/opencode-smart-voice-notify"]
    }
    ```
+
+### Testing
+
+The plugin uses [Bun](https://bun.sh)'s built-in test runner for unit and E2E tests.
+
+```bash
+# Run all tests
+bun test
+
+# Run tests with coverage
+bun test --coverage
+
+# Run tests in watch mode
+bun test --watch
+```
+
+For more detailed testing guidelines and mock usage examples, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Updating
 
