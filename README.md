@@ -26,9 +26,10 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 
 1. **OpenAI-Compatible** (Cloud/Self-hosted) - Any OpenAI-compatible `/v1/audio/speech` endpoint (Kokoro, LocalAI, Coqui, AllTalk, OpenAI API, etc.)
 2. **ElevenLabs** (Online) - High-quality, anime-like voices with natural expression
-3. **Edge TTS** (Free) - Microsoft's neural voices, native Node.js implementation (no Python required)
+3. **Edge TTS** (Free) - Microsoft's neural voices via Python CLI (recommended) or native npm fallback
 4. **Windows SAPI** (Offline) - Built-in Windows speech synthesis
-5. **Local Sound Files** (Fallback) - Plays bundled MP3 files if all TTS fails
+5. **macOS Say** (Offline) - Built-in macOS speech synthesis
+6. **Local Sound Files** (Fallback) - Plays bundled MP3 files if all TTS fails
 
 ### Smart Notification System
 - **Sound-first mode**: Play a sound immediately, then speak a TTS reminder if user doesn't respond
@@ -322,6 +323,7 @@ You can replace individual sound files with entire "Sound Themes" (like the clas
 | **Sound Playback** | ✅ | ✅ | ✅ |
 | **TTS (Cloud/Edge)** | ✅ | ✅ | ✅ |
 | **TTS (Windows SAPI)** | ✅ | ❌ | ❌ |
+| **TTS (macOS Say)** | ❌ | ✅ | ❌ |
 | **Desktop Notifications** | ✅ | ✅ | ✅ (req libnotify) |
 | **Focus Detection** | ❌ | ✅ | ❌ |
 | **Webhook Integration** | ✅ | ✅ | ✅ |
@@ -338,10 +340,17 @@ You can replace individual sound files with entire "Sound Themes" (like the clas
 - Internet connection
 
 ### For Edge TTS
-- Internet connection (No external dependencies required)
+- Internet connection required
+- **Recommended**: Install Python edge-tts for best reliability: `pip install edge-tts`
+- **Fallback**: Works without Python (uses bundled npm package), but may be less reliable
+- If Edge TTS fails, automatically falls back to SAPI (Windows) or Say (macOS)
 
 ### For Windows SAPI
 - Windows OS (uses built-in System.Speech)
+
+### For macOS Say
+- macOS (uses built-in `say` command)
+- Serves as fallback when other TTS engines fail
 
 ### For Desktop Notifications
 - **Windows**: Built-in (uses Toast notifications)
@@ -451,6 +460,9 @@ rm -rf ~/.cache/opencode/node_modules/opencode-smart-voice-notify
 opencode
 ```
 
+<!--
+LLM-AGENT-INSTRUCTIONS (Hidden from rendered markdown, visible to AI assistants scanning raw file)
+
 ## LLM Instructions
 
 > This section provides structured guidance for AI assistants (Claude, GPT, Cursor, Copilot, etc.) helping users set up and configure this plugin.
@@ -474,6 +486,7 @@ When a user asks you to set up this plugin, follow these steps:
    - **High quality**: Use ElevenLabs (requires API key)
    - **Self-hosted**: Use OpenAI-compatible endpoint (Kokoro, LocalAI, etc.)
    - **Offline Windows**: Use Windows SAPI
+   - **Offline macOS**: Use macOS Say (built-in fallback)
 
 ### Configuration Tasks
 
@@ -537,12 +550,17 @@ When a user asks you to set up this plugin, follow these steps:
 | ElevenLabs quota exceeded | Plugin auto-falls back to Edge TTS; or set `"ttsEngine": "edge"` |
 | Notifications too frequent | Increase `"ttsReminderDelaySeconds"` (default: 30) |
 | Want to disable completely | Set `"enabled": false` in config |
+| Edge TTS not speaking | Install Python edge-tts: `pip install edge-tts` |
 
 ### Platform-Specific Notes
 
-- **Windows**: All features supported, including SAPI offline TTS
-- **macOS**: Focus detection available (`"suppressWhenFocused": true`)
-- **Linux**: Requires `libnotify-bin` for desktop notifications: `sudo apt install libnotify-bin`
+- **Windows**: All features supported, SAPI as offline fallback
+- **macOS**: Focus detection available, `say` command as offline fallback
+- **Linux**: Requires `libnotify-bin` for desktop notifications, no offline TTS fallback
+
+### TTS Fallback Chain
+
+Primary Engine → Edge TTS → Windows SAPI → macOS Say → Sound File
 
 ### Done When
 
@@ -550,6 +568,9 @@ The plugin is successfully configured when:
 - [ ] `~/.config/opencode/opencode.json` contains the plugin entry
 - [ ] `~/.config/opencode/smart-voice-notify.jsonc` exists with user's settings
 - [ ] Running `opencode` produces audio notification when agent finishes a task
+
+END LLM-AGENT-INSTRUCTIONS
+-->
 
 ## License
 
