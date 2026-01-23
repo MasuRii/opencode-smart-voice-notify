@@ -387,12 +387,12 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
 
   /**
    * Schedule a TTS reminder if user doesn't respond within configured delay.
-   * The reminder uses a personalized TTS message.
+   * The reminder generates an AI message WHEN IT FIRES (not immediately), avoiding wasteful early AI calls.
    * @param {string} type - 'idle', 'permission', 'question', or 'error'
-   * @param {string} message - The TTS message to speak (used directly, supports count-aware messages)
+   * @param {string} _message - DEPRECATED: No longer used (AI message is generated when reminder fires)
    * @param {object} options - Additional options (fallbackSound, permissionCount, questionCount, errorCount, aiContext)
    */
-  const scheduleTTSReminder = (type, message, options = {}) => {
+  const scheduleTTSReminder = (type, _message, options = {}) => {
     // Check if TTS reminders are enabled
     if (!config.enableTTSReminder) {
       debugLog(`scheduleTTSReminder: TTS reminders disabled`);
@@ -831,19 +831,19 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
-    // Step 4: Generate AI message for reminder AFTER sound played (with context)
-    const reminderMessage = await getPermissionMessage(batchCount, true, aiContext);
-    
-    // Step 5: Schedule TTS reminder if enabled
-    if (config.enableTTSReminder && reminderMessage) {
-      scheduleTTSReminder('permission', reminderMessage, {
+    // Step 4: Schedule TTS reminder if enabled
+    // NOTE: The AI message is generated ONLY when the reminder fires (inside scheduleTTSReminder)
+    // This avoids wasteful immediate AI generation in sound-first mode - the user might respond before the reminder fires
+    // IMPORTANT: Skip TTS reminder entirely in 'sound-only' mode
+    if (config.enableTTSReminder && config.notificationMode !== 'sound-only') {
+      scheduleTTSReminder('permission', null, {
         fallbackSound: config.permissionSound,
         permissionCount: batchCount,
-        aiContext  // Pass context for follow-up reminders
+        aiContext  // Pass context for reminder message generation
       });
     }
     
-    // Step 6: If TTS-first or both mode, generate and speak immediate message
+    // Step 5: If TTS-first or both mode, generate and speak immediate message
     if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
       const ttsMessage = await getPermissionMessage(batchCount, false, aiContext);
       await tts.wakeMonitor();
@@ -937,19 +937,19 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
       return;
     }
 
-    // Step 4: Generate AI message for reminder AFTER sound played (with context)
-    const reminderMessage = await getQuestionMessage(totalQuestionCount, true, aiContext);
-
-    // Step 5: Schedule TTS reminder if enabled
-    if (config.enableTTSReminder && reminderMessage) {
-      scheduleTTSReminder('question', reminderMessage, {
+    // Step 4: Schedule TTS reminder if enabled
+    // NOTE: The AI message is generated ONLY when the reminder fires (inside scheduleTTSReminder)
+    // This avoids wasteful immediate AI generation in sound-first mode - the user might respond before the reminder fires
+    // IMPORTANT: Skip TTS reminder entirely in 'sound-only' mode
+    if (config.enableTTSReminder && config.notificationMode !== 'sound-only') {
+      scheduleTTSReminder('question', null, {
         fallbackSound: config.questionSound,
         questionCount: totalQuestionCount,
-        aiContext  // Pass context for follow-up reminders
+        aiContext  // Pass context for reminder message generation
       });
     }
     
-    // Step 6: If TTS-first or both mode, generate and speak immediate message
+    // Step 5: If TTS-first or both mode, generate and speak immediate message
     if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
       const ttsMessage = await getQuestionMessage(totalQuestionCount, false, aiContext);
       await tts.wakeMonitor();
@@ -1194,18 +1194,18 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
             return;
           }
 
-          // Step 4: Generate AI message for reminder AFTER sound played
-          const reminderMessage = await getSmartMessage('idle', true, config.idleReminderTTSMessages, aiContext);
-
-          // Step 5: Schedule TTS reminder if enabled
-          if (config.enableTTSReminder && reminderMessage) {
-            scheduleTTSReminder('idle', reminderMessage, {
+          // Step 4: Schedule TTS reminder if enabled
+          // NOTE: The AI message is generated ONLY when the reminder fires (inside scheduleTTSReminder)
+          // This avoids wasteful immediate AI generation in sound-first mode - the user might respond before the reminder fires
+          // IMPORTANT: Skip TTS reminder entirely in 'sound-only' mode
+          if (config.enableTTSReminder && config.notificationMode !== 'sound-only') {
+            scheduleTTSReminder('idle', null, {
               fallbackSound: config.idleSound,
-              aiContext  // Pass context for follow-up reminders
+              aiContext  // Pass context for reminder message generation
             });
           }
           
-          // Step 6: If TTS-first or both mode, generate and speak immediate message
+          // Step 5: If TTS-first or both mode, generate and speak immediate message
           if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
             const ttsMessage = await getSmartMessage('idle', false, config.idleTTSMessages, aiContext);
             await tts.wakeMonitor();
@@ -1274,18 +1274,18 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
             }
           }
 
-          // Step 3: Generate AI message for reminder AFTER sound played
-          const reminderMessage = await getErrorMessage(1, true);
-
-          // Step 4: Schedule TTS reminder if enabled
-          if (config.enableTTSReminder && reminderMessage) {
-            scheduleTTSReminder('error', reminderMessage, {
+          // Step 3: Schedule TTS reminder if enabled
+          // NOTE: The AI message is generated ONLY when the reminder fires (inside scheduleTTSReminder)
+          // This avoids wasteful immediate AI generation in sound-first mode - the user might respond before the reminder fires
+          // IMPORTANT: Skip TTS reminder entirely in 'sound-only' mode
+          if (config.enableTTSReminder && config.notificationMode !== 'sound-only') {
+            scheduleTTSReminder('error', null, {
               fallbackSound: config.errorSound,
               errorCount: 1
             });
           }
           
-          // Step 5: If TTS-first or both mode, generate and speak immediate message
+          // Step 4: If TTS-first or both mode, generate and speak immediate message
           if (config.notificationMode === 'tts-first' || config.notificationMode === 'both') {
             const ttsMessage = await getErrorMessage(1, false);
             await tts.wakeMonitor();

@@ -338,16 +338,42 @@ export const createTTS = ({ $, client }) => {
   };
 
   /**
-   * Edge TTS Engine (Free, Neural voices)
+   * Edge TTS Engine via Python CLI (Free, Neural voices)
+   * Uses Python edge-tts package via command line as it's more reliable than Node.js WebSocket libraries.
+   * Fallback: tries msedge-tts npm package if Python edge-tts is not available.
    */
   const speakWithEdgeTTS = async (text) => {
+    const voice = config.edgeVoice || 'en-US-JennyNeural';
+    const pitch = config.edgePitch || '+0Hz';
+    const rate = config.edgeRate || '+10%';
+    const volume = config.edgeVolume || '+0%';
+    const tempFile = path.join(os.tmpdir(), `opencode-edge-tts-${Date.now()}.mp3`);
+    
+    // Escape text for shell (replace quotes with escaped quotes)
+    const escapedText = text.replace(/"/g, '\\"');
+    
+    // Try Python edge-tts first (more reliable due to aiohttp WebSocket handling)
+    if ($) {
+      try {
+        // Use proper template literal syntax with individual arguments
+        await $`edge-tts --voice ${voice} --rate ${rate} --volume ${volume} --pitch ${pitch} --text ${escapedText} --write-media ${tempFile}`.quiet().nothrow();
+        
+        if (fs.existsSync(tempFile)) {
+          await playAudioFile(tempFile);
+          try { fs.unlinkSync(tempFile); } catch (e) {}
+          debugLog('speakWithEdgeTTS: success via Python edge-tts CLI');
+          return true;
+        }
+      } catch (e) {
+        debugLog(`speakWithEdgeTTS: Python CLI failed: ${e?.message || 'unknown'}, trying npm package...`);
+        // Fall through to try npm package
+      }
+    }
+    
+    // Fallback to msedge-tts npm package
     try {
       const { MsEdgeTTS, OUTPUT_FORMAT } = await import('msedge-tts');
       const tts = new MsEdgeTTS();
-      const voice = config.edgeVoice || 'en-US-JennyNeural';
-      const pitch = config.edgePitch || '+0Hz';
-      const rate = config.edgeRate || '+10%';
-      const volume = config.edgeVolume || '+0%';
       
       await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       
@@ -355,6 +381,7 @@ export const createTTS = ({ $, client }) => {
       
       await playAudioFile(audioFilePath);
       try { fs.unlinkSync(audioFilePath); } catch (e) {}
+      debugLog('speakWithEdgeTTS: success via msedge-tts npm package');
       return true;
     } catch (e) {
       debugLog(`speakWithEdgeTTS error: ${e?.message || String(e) || 'Unknown error'}`);
@@ -630,7 +657,13 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
 
   /**
    * Main Speak function with fallback chain
-   * Cascade: ElevenLabs -> Edge TTS -> Windows SAPI -> macOS Say -> Sound File
+   * Cascade: Primary Engine -> Edge TTS -> Windows SAPI -> macOS Say -> Sound File
+   * 
+   * Fallback ensures TTS works even if:
+   * - Python edge-tts not installed (falls to npm package, then SAPI/Say)
+   * - msedge-tts npm fails (403 errors - falls to SAPI/Say)
+   * - User is on macOS without edge-tts (falls to built-in 'say' command)
+   * - User is on Linux without edge-tts (falls to sound file only)
    */
   const speak = async (message, options = {}) => {
     const activeConfig = { ...config, ...options };
@@ -644,13 +677,16 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
         success = await speakWithOpenAI(message);
         if (!success) success = await speakWithEdgeTTS(message);
         if (!success) success = await speakWithSAPI(message);
+        if (!success) success = await speakWithSay(message);  // macOS fallback
       } else if (engine === 'elevenlabs') {
         success = await speakWithElevenLabs(message);
         if (!success) success = await speakWithEdgeTTS(message);
         if (!success) success = await speakWithSAPI(message);
+        if (!success) success = await speakWithSay(message);  // macOS fallback
       } else if (engine === 'edge') {
         success = await speakWithEdgeTTS(message);
         if (!success) success = await speakWithSAPI(message);
+        if (!success) success = await speakWithSay(message);  // macOS fallback
       } else if (engine === 'sapi') {
         success = await speakWithSAPI(message);
         if (!success) success = await speakWithSay(message);
