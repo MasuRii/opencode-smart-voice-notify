@@ -134,6 +134,7 @@ export function createMinimalConfig(overrides = {}) {
     enableTTSReminder: false,  // Disable reminders in tests by default
     enableSound: false,        // Disable sounds in tests by default
     enableToast: false,        // Disable toasts in tests by default
+    enableAIMessages: false,   // Disable AI message generation in tests (avoids network calls)
     debugLog: false,           // Disable debug logging in tests
     ...overrides
   };
@@ -275,6 +276,7 @@ export function createMockShellRunner(options = {}) {
     // Add Bun shell methods to the promise
     promise.quiet = function() { return this; };
     promise.nothrow = function() { return this; };
+    promise.timeout = function() { return this; };
     
     return promise;
   };
@@ -608,6 +610,7 @@ export function getTTSCalls(shell) {
 
 /**
  * Helper to detect any audio playback calls (sound or TTS) in mock shell history.
+ * This includes both audio file playback AND TTS speech (which produces audio).
  * 
  * @param {object} shell - Mock shell runner from createMockShellRunner()
  * @returns {Array} Array of audio-related calls
@@ -615,8 +618,17 @@ export function getTTSCalls(shell) {
 export function getAudioCalls(shell) {
   return shell.getCalls().filter(c => {
     const cmd = c.command;
-    // Windows audio playback
+    // Windows audio playback (MediaPlayer)
     if (cmd.includes('System.Windows.Media.MediaPlayer')) {
+      return true;
+    }
+    // Windows SAPI TTS (PowerShell script that speaks via System.Speech)
+    // This also produces audio output!
+    if (cmd.includes('powershell.exe') && cmd.includes('-File') && cmd.includes('.ps1')) {
+      return true;
+    }
+    // Edge TTS CLI command (produces audio file then plays it)
+    if (cmd.includes('edge-tts') && cmd.includes('--write-media')) {
       return true;
     }
     // Linux audio playback
@@ -625,6 +637,10 @@ export function getAudioCalls(shell) {
     }
     // macOS audio playback
     if (cmd.includes('afplay')) {
+      return true;
+    }
+    // macOS say command (TTS)
+    if (cmd.includes('say ')) {
       return true;
     }
     return false;
