@@ -95,6 +95,20 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
   let activePermissionId = null;
 
   // ========================================
+  // IDLE EVENT DEBOUNCING STATE
+  // Prevents multiple notifications when SDK fires duplicate session.idle events
+  // (observed on Linux when error + idle events fire in rapid succession)
+  // ========================================
+  
+  // Map of sessionID -> timestamp of last processed idle notification
+  const lastIdleNotificationTime = new Map();
+  
+  // Debounce window in milliseconds - skip duplicate idle events within this window
+  // 5 seconds is long enough to catch rapid duplicates but short enough to allow
+  // legitimate subsequent idle notifications (e.g., user sends new message, agent completes again)
+  const IDLE_DEBOUNCE_WINDOW_MS = 5000;
+
+  // ========================================
   // PERMISSION BATCHING STATE
   // Batches multiple simultaneous permission requests into a single notification
   // ========================================
@@ -1114,6 +1128,20 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
             questionBatchTimeout = null;
           }
           
+          // Clear idle debounce for this session (allows fresh notifications)
+          const newSessionID = event.properties?.info?.id;
+          if (newSessionID) {
+            lastIdleNotificationTime.delete(newSessionID);
+          }
+          
+          // Cleanup old debounce entries to prevent memory leaks (entries older than 1 hour)
+          const cleanupThreshold = Date.now() - (60 * 60 * 1000);
+          for (const [sid, timestamp] of lastIdleNotificationTime.entries()) {
+            if (timestamp < cleanupThreshold) {
+              lastIdleNotificationTime.delete(sid);
+            }
+          }
+          
           debugLog(`Session created: ${event.type} - reset all tracking state`);
         }
 
@@ -1132,6 +1160,21 @@ export default async function SmartVoiceNotifyPlugin({ project, client, $, direc
 
           const sessionID = event.properties?.sessionID;
           if (!sessionID) return;
+
+          // ========================================
+          // DEBOUNCE CHECK: Prevent duplicate notifications on Linux
+          // The OpenCode SDK can fire multiple session.idle events in rapid succession
+          // (especially after errors). Skip if we recently notified for this session.
+          // ========================================
+          const now = Date.now();
+          const lastNotifyTime = lastIdleNotificationTime.get(sessionID);
+          if (lastNotifyTime && (now - lastNotifyTime) < IDLE_DEBOUNCE_WINDOW_MS) {
+            debugLog(`session.idle: debounced for session ${sessionID} (last notified ${now - lastNotifyTime}ms ago, window=${IDLE_DEBOUNCE_WINDOW_MS}ms)`);
+            return;
+          }
+          // Record this notification time (will be confirmed after sub-session check)
+          // We set it early to prevent race conditions with concurrent events
+          lastIdleNotificationTime.set(sessionID, now);
 
           // Fetch session details for context-aware AI and sub-session filtering
           let sessionData = null;
