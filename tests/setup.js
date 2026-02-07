@@ -387,7 +387,10 @@ export const mockEvents = {
   
   sessionError: (sessionID) => createMockEvent('session.error', { sessionID }),
   
-  sessionCreated: (sessionID) => createMockEvent('session.created', { sessionID }),
+  sessionCreated: (sessionID) => createMockEvent('session.created', { 
+    sessionID,
+    info: { id: sessionID }  // Include info object for debounce cleanup
+  }),
   
   permissionAsked: (id, sessionID) => createMockEvent('permission.asked', {
     id: id || `perm-${Date.now()}`,

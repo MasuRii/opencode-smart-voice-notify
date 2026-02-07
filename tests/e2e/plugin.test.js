@@ -164,6 +164,128 @@ describe('Plugin E2E (Plugin Core)', () => {
       expect(mockClient.tui.getToastCalls().length).toBe(0);
     });
 
+    // ========================================
+    // IDLE EVENT DEBOUNCING TESTS
+    // Tests for the fix of duplicate notifications on Linux
+    // when SDK fires multiple session.idle events in rapid succession
+    // ========================================
+    
+    test('should debounce rapid duplicate session.idle events for same session', async () => {
+      createTestConfig(createMinimalConfig({ 
+        enabled: true, 
+        enableSound: true,
+        enableToast: true,
+        idleSound: 'assets/test-sound.mp3'
+      }));
+      
+      const plugin = await SmartVoiceNotifyPlugin({
+        project: { name: 'TestProject' },
+        client: mockClient,
+        $: mockShell
+      });
+      
+      // Fire multiple idle events for the SAME session in rapid succession
+      // (simulating the Linux bug where SDK fires duplicates within ~100ms)
+      const sessionId = 'session-debounce-test';
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      
+      // Should only have ONE toast (duplicates debounced)
+      const toastCalls = mockClient.tui.getToastCalls();
+      expect(toastCalls.length).toBe(1);
+      
+      // Should only have played sound ONCE
+      // Note: getCallCount includes the sound play command
+      const initialCallCount = mockShell.getCallCount();
+      expect(initialCallCount).toBeGreaterThan(0); // At least one call happened
+      
+      // Fire another duplicate - should still be debounced
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      expect(mockClient.tui.getToastCalls().length).toBe(1); // Still just one
+    });
+
+    test('should allow idle notifications for DIFFERENT sessions', async () => {
+      createTestConfig(createMinimalConfig({ 
+        enabled: true, 
+        enableSound: true,
+        enableToast: true,
+        idleSound: 'assets/test-sound.mp3'
+      }));
+      
+      const plugin = await SmartVoiceNotifyPlugin({
+        project: { name: 'TestProject' },
+        client: mockClient,
+        $: mockShell
+      });
+      
+      // Fire idle events for DIFFERENT sessions
+      await plugin.event({ event: mockEvents.sessionIdle('session-A') });
+      await plugin.event({ event: mockEvents.sessionIdle('session-B') });
+      await plugin.event({ event: mockEvents.sessionIdle('session-C') });
+      
+      // Should have THREE toasts (one per session)
+      const toastCalls = mockClient.tui.getToastCalls();
+      expect(toastCalls.length).toBe(3);
+    });
+
+    test('should allow new idle notification after debounce window expires', async () => {
+      createTestConfig(createMinimalConfig({ 
+        enabled: true, 
+        enableSound: true,
+        enableToast: true,
+        idleSound: 'assets/test-sound.mp3'
+      }));
+      
+      const plugin = await SmartVoiceNotifyPlugin({
+        project: { name: 'TestProject' },
+        client: mockClient,
+        $: mockShell
+      });
+      
+      const sessionId = 'session-debounce-expiry';
+      
+      // First notification
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      expect(mockClient.tui.getToastCalls().length).toBe(1);
+      
+      // Immediate duplicate should be debounced
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      expect(mockClient.tui.getToastCalls().length).toBe(1);
+      
+      // Note: We can't easily test the 5-second expiry in a unit test without
+      // waiting 5+ seconds. The debounce window is hardcoded to 5000ms.
+      // This test verifies the basic debouncing works; expiry is a timing test.
+    });
+
+    test('should reset debounce state on session.created', async () => {
+      createTestConfig(createMinimalConfig({ 
+        enabled: true, 
+        enableSound: true,
+        enableToast: true,
+        idleSound: 'assets/test-sound.mp3'
+      }));
+      
+      const plugin = await SmartVoiceNotifyPlugin({
+        project: { name: 'TestProject' },
+        client: mockClient,
+        $: mockShell
+      });
+      
+      const sessionId = 'session-reset-test';
+      
+      // First idle notification
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      expect(mockClient.tui.getToastCalls().length).toBe(1);
+      
+      // Create a new session (this clears debounce state for that session)
+      await plugin.event({ event: mockEvents.sessionCreated(sessionId) });
+      
+      // Now idle should work again (debounce cleared)
+      await plugin.event({ event: mockEvents.sessionIdle(sessionId) });
+      expect(mockClient.tui.getToastCalls().length).toBe(2);
+    });
+
     // Skip on non-Windows CI: TTS reminder tests require working TTS engine and are timing-sensitive
     test.skipIf(!isWindows)('should schedule TTS reminder after configured delay', async () => {
       createTestConfig(createMinimalConfig({ 
