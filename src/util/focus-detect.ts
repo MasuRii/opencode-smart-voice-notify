@@ -123,6 +123,13 @@ export const KNOWN_TERMINALS_MACOS = [
   'Warp',
   'Rio',
   'Ghostty',
+  // VS Code integrated terminal hosts OpenCode inside the editor process.
+  'Visual Studio Code',
+  'Visual Studio Code - Insiders',
+  'VSCodium',
+  'VS Code',
+  'VSCode',
+  'vscode',
 ] as const;
 
 /**
@@ -147,6 +154,17 @@ export const KNOWN_TERMINALS_WINDOWS = [
   'Warp',
   'Rio',
   'Ghostty',
+  // VS Code integrated terminal runs under the editor's GUI process.
+  'Code',
+  'Code.exe',
+  'Visual Studio Code',
+  'Code - Insiders',
+  'Code - Insiders.exe',
+  'VS Code',
+  'VSCode',
+  'vscode',
+  'VSCodium',
+  'VSCodium.exe',
   // Unix-like shells on Windows
   'Git Bash',
   'bash',
@@ -182,6 +200,13 @@ export const KNOWN_TERMINALS_LINUX = [
   'urxvt',
   'rxvt',
   'st',
+  // VS Code/X11/Wayland classes and TERM_PROGRAM values.
+  'code',
+  'code-insiders',
+  'code-oss',
+  'codium',
+  'vscodium',
+  'vscode',
 ] as const;
 
 // ========================================
@@ -258,6 +283,40 @@ export const isFocusDetectionSupported = (): FocusDetectionSupport => {
 let cachedTerminalName: string | null = null;
 let terminalDetectionAttempted = false;
 
+const normalizeTerminalName = (name: string): string => name.trim().toLowerCase().replace(/\.exe$/i, '');
+
+const VS_CODE_TERM_PROGRAMS = new Set(['vscode', 'vscode-insiders', 'vscodium']);
+const VS_CODE_FOCUS_NAMES = new Set([
+  'code',
+  'visual studio code',
+  'visual studio code - insiders',
+  'code - insiders',
+  'vs code',
+  'vscode',
+  'vscode-insiders',
+  'vscodium',
+  'code-insiders',
+  'code-oss',
+  'codium',
+]);
+
+const getVSCodeTermProgram = (): string | null => {
+  const termProgram = process.env.TERM_PROGRAM?.trim().toLowerCase();
+  if (!termProgram || !VS_CODE_TERM_PROGRAMS.has(termProgram)) {
+    return null;
+  }
+
+  return termProgram;
+};
+
+const isVSCodeTerminalName = (name: string | null): boolean => {
+  if (!name) {
+    return false;
+  }
+
+  return VS_CODE_FOCUS_NAMES.has(normalizeTerminalName(name));
+};
+
 export const getTerminalName = (debug = false): string | null => {
   // Return cached result if already detected
   if (terminalDetectionAttempted) {
@@ -266,6 +325,14 @@ export const getTerminalName = (debug = false): string | null => {
 
   try {
     terminalDetectionAttempted = true;
+
+    const vscodeTermProgram = getVSCodeTermProgram();
+    if (vscodeTermProgram) {
+      cachedTerminalName = vscodeTermProgram;
+      debugLog(`Detected terminal from TERM_PROGRAM: ${cachedTerminalName}`, debug);
+      return cachedTerminalName;
+    }
+
     // Prefer the outer terminal (GUI app) over multiplexers like tmux/screen
     const terminal = detectTerminal({ preferOuter: true });
     cachedTerminalName = terminal || null;
@@ -492,6 +559,20 @@ const parseQuotedValues = (text: string): string[] => {
 
 const getFrontmostAppLinuxX11 = async (debug = false, shellRunner?: ShellRunner): Promise<string | null> => {
   if (!process.env.DISPLAY) {
+    const vscodeClass = shellRunner
+      ? await runLinuxFocusCommand(
+          'xdotool getwindowfocus getwindowclassname',
+          debug,
+          'linux.x11.xdotool-class-no-display',
+          shellRunner,
+        )
+      : null;
+
+    if (isVSCodeTerminalName(vscodeClass)) {
+      debugLog(`linux.x11: VS Code focused without DISPLAY: "${vscodeClass}"`, debug);
+      return vscodeClass;
+    }
+
     debugLog('linux.x11: DISPLAY not set', debug);
     return null;
   }
@@ -790,8 +871,6 @@ const getFrontmostAppLinux = async (debug = false, shellRunner?: ShellRunner): P
  * @param debug - Enable debug logging
  * @returns True if the app is a known terminal
  */
-const normalizeTerminalName = (name: string): string => name.trim().toLowerCase().replace(/\.exe$/i, '');
-
 const isKnownTerminal = (
   appName: string | null,
   knownTerminals: readonly string[],
@@ -808,8 +887,14 @@ const isKnownTerminal = (
     return true;
   }
 
-  // Partial match (for apps like "iTerm2" matching "iTerm")
-  if (knownTerminals.some((t) => normalizedAppName.includes(normalizeTerminalName(t)))) {
+  // Partial match (for apps like "iTerm2" matching "iTerm"). Skip generic names
+  // like "code" so unrelated editor/process names do not become false positives.
+  if (
+    knownTerminals.some((t) => {
+      const normalizedTerminal = normalizeTerminalName(t);
+      return normalizedTerminal !== 'code' && normalizedAppName.includes(normalizedTerminal);
+    })
+  ) {
     debugLog(`"${appName}" is a known terminal (partial match)`, debug);
     return true;
   }

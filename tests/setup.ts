@@ -469,7 +469,7 @@ export function getTTSCalls(shell: MockShellRunner): ShellCallRecord[] {
       return true;
     }
 
-    if (cmd.includes('System.Windows.Media.MediaPlayer')) {
+    if (cmd.includes('System.Windows.Media.MediaPlayer') || cmd.includes('mciSendString')) {
       return true;
     }
 
@@ -481,7 +481,7 @@ export function getAudioCalls(shell: MockShellRunner): ShellCallRecord[] {
   return shell.getCalls().filter((record) => {
     const cmd = record.command;
 
-    if (cmd.includes('System.Windows.Media.MediaPlayer')) {
+    if (cmd.includes('System.Windows.Media.MediaPlayer') || cmd.includes('mciSendString')) {
       return true;
     }
 

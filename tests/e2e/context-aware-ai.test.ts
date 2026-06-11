@@ -19,13 +19,13 @@ import {
 } from '../setup.js';
 
 /**
- * E2E Tests for Context-Aware AI Feature (Issue #9)
+ * E2E Tests for Context-Aware AI Feature
  * 
  * Tests the enableContextAwareAI configuration option which allows
  * AI-generated notifications to include project name, task title,
  * and change summary context.
  */
-describe('Context-Aware AI Feature (Issue #9)', () => {
+describe('Context-Aware AI Feature', () => {
   let mockClient;
   let mockShell;
   let tempDir;

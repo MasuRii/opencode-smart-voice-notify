@@ -1,20 +1,22 @@
+import crypto from 'crypto';
+import { execFile } from 'node:child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
 import type { PluginConfig } from '../types/config.js';
 import type { LinuxPlatformAPI } from '../types/linux.js';
-import type { OpenCodeClient, ShellRunner } from '../types/opencode-sdk.js';
+import type { OpenCodeClient, ShellRunner, ToastVariant, TUIToastPayload } from '../types/opencode-sdk.js';
 import type { SpeakOptions, TTSAPI, TTSFactoryParams } from '../types/tts.js';
 
 import { loadConfig } from './config.js';
 import { createLinuxPlatform } from './linux.js';
 
-const platform = os.platform();
+const getPlatform = (): NodeJS.Platform => os.platform();
 // Remove module-level configDir constant that caches process.env prematurely
 // const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
 
-type ToastVariant = 'info' | 'success' | 'warning' | 'error';
+type VoiceCacheEngine = 'openai' | 'elevenlabs' | 'edge' | 'sapi';
 
 interface ElevenLabsErrorLike {
   statusCode?: number;
@@ -87,6 +89,9 @@ export const getTTSConfig = (): PluginConfig => {
     openaiTtsVoice: 'alloy',
     openaiTtsFormat: 'mp3',
     openaiTtsSpeed: 1.0,
+    enableVoiceCache: false,
+    voiceCacheDir: 'voice-cache',
+    voiceCacheMaxSizeMB: 100,
 
     // ============================================================
     // NOTIFICATION MODE & TTS REMINDER SETTINGS
@@ -241,6 +246,7 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
   const shell: ShellRunner | undefined = $;
   const opencodeClient: OpenCodeClient | undefined = client;
   const config = getTTSConfig();
+  const currentPlatform = getPlatform();
   const configDir = getConfigDir();
   const logsDir = path.join(configDir, 'logs');
 
@@ -265,58 +271,136 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
   };
 
   // Initialize Linux platform utilities (only used on Linux)
-  const linux: LinuxPlatformAPI | null = platform === 'linux' ? createLinuxPlatform({ $: shell, debugLog }) : null;
+  const linux: LinuxPlatformAPI | null = currentPlatform === 'linux' ? createLinuxPlatform({ $: shell, debugLog }) : null;
+  let tuiShowToastShape: 'v1' | 'v2' | null = null;
 
   const showToast = async (message: string, variant: ToastVariant = 'info'): Promise<void> => {
     if (!config.enableToast) return;
     try {
       if (typeof opencodeClient?.tui?.showToast === 'function') {
-        await opencodeClient.tui.showToast({
-          body: {
-            message,
-            variant,
-            duration: 6000,
-          },
-        });
+        const toastPayload: TUIToastPayload = { message, variant, duration: 6000 };
+
+        if (tuiShowToastShape === 'v1') {
+          await opencodeClient.tui.showToast({ body: toastPayload });
+          return;
+        }
+
+        if (tuiShowToastShape === 'v2') {
+          await opencodeClient.tui.showToast(toastPayload);
+          return;
+        }
+
+        try {
+          await opencodeClient.tui.showToast(toastPayload);
+          tuiShowToastShape = 'v2';
+        } catch {
+          await opencodeClient.tui.showToast({ body: toastPayload });
+          tuiShowToastShape = 'v1';
+        }
       }
     } catch {}
+  };
+
+  const execFileQuiet = (file: string, args: string[]): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      execFile(file, args, { windowsHide: true }, (error, stdout, stderr) => {
+        const stderrText = outputToString(stderr).trim();
+        const stdoutText = outputToString(stdout).trim();
+
+        if (error) {
+          const details = [getErrorMessage(error), stderrText, stdoutText].filter(Boolean).join('; ');
+          reject(new Error(details || `${file} failed`));
+          return;
+        }
+
+        if (stderrText) {
+          debugLog(`execFileQuiet stderr from ${file}: ${stderrText}`);
+        }
+        resolve();
+      });
+    });
+  };
+
+  const runPowerShellCommand = async (cmd: string): Promise<void> => {
+    if (shell) {
+      await shell`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${cmd}`.quiet();
+      return;
+    }
+
+    await execFileQuiet('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cmd]);
+  };
+
+  const escapePowerShellSingleQuotedString = (value: string): string => value.replace(/'/g, "''");
+
+  const getSafeLoopCount = (value: number): number => {
+    if (!Number.isFinite(value)) {
+      return 1;
+    }
+    return Math.max(1, Math.floor(value));
+  };
+
+  const getWindowsMciPlaybackCommand = (audioPath: string, loopCount: number): string => {
+    const safePath = escapePowerShellSingleQuotedString(audioPath);
+    return `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class MciAudio {
+  [DllImport("winmm.dll", CharSet = CharSet.Auto)]
+  public static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr winHandle);
+}
+'@
+function Invoke-Mci([string]$Command) {
+  $buffer = New-Object System.Text.StringBuilder 256
+  $code = [MciAudio]::mciSendString($Command, $buffer, $buffer.Capacity, [IntPtr]::Zero)
+  if ($code -ne 0) { throw "MCI command failed ($code): $Command" }
+  return $buffer.ToString()
+}
+$filePath = '${safePath}'
+$alias = 'opencode_notify_' + ([Guid]::NewGuid().ToString('N'))
+try {
+  for ($i = 0; $i -lt ${loopCount}; $i++) {
+    [void](Invoke-Mci "open \`"$filePath\`" alias $alias")
+    [void](Invoke-Mci "play $alias wait")
+    [void](Invoke-Mci "close $alias")
+  }
+} finally {
+  try { [void](Invoke-Mci "close $alias") } catch {}
+}
+exit 0
+`;
   };
 
   /**
    * Play an audio file using system media player
    */
   const playAudioFile = async (filePath: string, loops = 1): Promise<void> => {
-    if (!shell) {
-      debugLog('playAudioFile: shell runner ($) not available');
-      return;
-    }
+    const safeLoops = getSafeLoopCount(loops);
     try {
-      if (platform === 'win32') {
-        const cmd = `
-          Add-Type -AssemblyName presentationCore
-          $player = New-Object System.Windows.Media.MediaPlayer
-          $player.Volume = 1.0
-          for ($i = 0; $i -lt ${loops}; $i++) {
-            $player.Open([Uri]::new('${filePath.replace(/\\/g, '\\\\')}'))
-            $player.Play()
-            Start-Sleep -Milliseconds 500
-            while ($player.Position -lt $player.NaturalDuration.TimeSpan -and $player.HasAudio) {
-              Start-Sleep -Milliseconds 100
-            }
-          }
-          $player.Close()
-        `;
-        await shell`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${cmd}`.quiet();
-      } else if (platform === 'darwin') {
-        for (let i = 0; i < loops; i++) {
+      if (currentPlatform === 'win32') {
+        const cmd = getWindowsMciPlaybackCommand(filePath, safeLoops);
+        await runPowerShellCommand(cmd);
+        debugLog(`playAudioFile: Windows MCI playback completed for ${filePath} (${safeLoops}x)`);
+      } else if (currentPlatform === 'darwin') {
+        if (!shell) {
+          debugLog('playAudioFile: shell runner ($) not available for macOS playback');
+          return;
+        }
+        for (let i = 0; i < safeLoops; i++) {
           await shell`afplay ${filePath}`.quiet();
         }
-      } else if (platform === 'linux' && linux) {
+      } else if (currentPlatform === 'linux' && linux) {
         // Use the Linux platform module for audio playback
-        await linux.playAudioFile(filePath, loops);
+        await linux.playAudioFile(filePath, safeLoops);
       } else {
+        if (!shell) {
+          debugLog('playAudioFile: shell runner ($) not available for Unix playback');
+          return;
+        }
         // Generic fallback for other Unix-like systems
-        for (let i = 0; i < loops; i++) {
+        for (let i = 0; i < safeLoops; i++) {
           try {
             await shell`paplay ${filePath}`.quiet();
           } catch {
@@ -329,10 +413,193 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
     }
   };
 
+  const getVoiceCacheLimitBytes = (): number => {
+    const maxSizeMB = Number(config.voiceCacheMaxSizeMB ?? 100);
+    if (!Number.isFinite(maxSizeMB) || maxSizeMB <= 0) {
+      return 0;
+    }
+    return Math.floor(maxSizeMB * 1024 * 1024);
+  };
+
+  const getVoiceCacheDirectory = (): string | null => {
+    if (!config.enableVoiceCache || getVoiceCacheLimitBytes() <= 0) {
+      return null;
+    }
+
+    const configuredDir = config.voiceCacheDir || 'voice-cache';
+    const cacheDir = path.isAbsolute(configuredDir) ? configuredDir : path.join(configDir, configuredDir);
+
+    try {
+      fs.mkdirSync(cacheDir, { recursive: true });
+      return cacheDir;
+    } catch (error) {
+      debugLog(`voice cache: unable to create cache directory: ${getErrorMessage(error)}`);
+      return null;
+    }
+  };
+
+  const normalizeCacheExtension = (extension: string): string => {
+    const cleaned = extension.replace(/^\./, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return cleaned || 'mp3';
+  };
+
+  const getVoiceCacheFile = (
+    engine: VoiceCacheEngine,
+    text: string,
+    parameters: Record<string, unknown>,
+    extension: string,
+  ): string | null => {
+    const cacheDir = getVoiceCacheDirectory();
+    if (!cacheDir) {
+      return null;
+    }
+
+    const cacheKey = crypto
+      .createHash('sha256')
+      .update(JSON.stringify({ version: 1, engine, text, parameters }))
+      .digest('hex');
+
+    return path.join(cacheDir, `tts-${cacheKey}.${normalizeCacheExtension(extension)}`);
+  };
+
+  const pruneVoiceCache = (cacheDir: string): void => {
+    const limitBytes = getVoiceCacheLimitBytes();
+    if (limitBytes <= 0) {
+      return;
+    }
+
+    try {
+      const entries = fs
+        .readdirSync(cacheDir)
+        .filter((file) => file.startsWith('tts-'))
+        .map((file) => {
+          const filePath = path.join(cacheDir, file);
+          const stats = fs.statSync(filePath);
+          return { filePath, size: stats.size, mtimeMs: stats.mtimeMs };
+        })
+        .filter((entry) => fs.statSync(entry.filePath).isFile())
+        .sort((left, right) => left.mtimeMs - right.mtimeMs);
+
+      let totalBytes = entries.reduce((total, entry) => total + entry.size, 0);
+      for (const entry of entries) {
+        if (totalBytes <= limitBytes) {
+          break;
+        }
+        try {
+          fs.unlinkSync(entry.filePath);
+          totalBytes -= entry.size;
+        } catch (error) {
+          debugLog(`voice cache: unable to prune ${entry.filePath}: ${getErrorMessage(error)}`);
+        }
+      }
+    } catch (error) {
+      debugLog(`voice cache: prune failed: ${getErrorMessage(error)}`);
+    }
+  };
+
+  const commitVoiceCacheFile = (tempFile: string, cacheFile: string): boolean => {
+    try {
+      if (!fs.existsSync(tempFile)) {
+        return false;
+      }
+
+      if (fs.existsSync(cacheFile)) {
+        try {
+          fs.unlinkSync(tempFile);
+        } catch {}
+        return true;
+      }
+
+      fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+      try {
+        fs.renameSync(tempFile, cacheFile);
+      } catch {
+        fs.copyFileSync(tempFile, cacheFile);
+        fs.unlinkSync(tempFile);
+      }
+      pruneVoiceCache(path.dirname(cacheFile));
+      return fs.existsSync(cacheFile);
+    } catch (error) {
+      debugLog(`voice cache: unable to commit cache file: ${getErrorMessage(error)}`);
+      try {
+        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      } catch {}
+      return false;
+    }
+  };
+
+  const writeVoiceCacheBuffer = (cacheFile: string, audio: Buffer): boolean => {
+    const tempFile = `${cacheFile}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      fs.writeFileSync(tempFile, audio);
+      return commitVoiceCacheFile(tempFile, cacheFile);
+    } catch (error) {
+      debugLog(`voice cache: unable to write cache buffer: ${getErrorMessage(error)}`);
+      try {
+        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      } catch {}
+      return false;
+    }
+  };
+
+  const copyVoiceCacheFile = (cacheFile: string, sourceFile: string): boolean => {
+    if (!fs.existsSync(sourceFile)) {
+      return false;
+    }
+
+    const tempFile = `${cacheFile}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      fs.copyFileSync(sourceFile, tempFile);
+      return commitVoiceCacheFile(tempFile, cacheFile);
+    } catch (error) {
+      debugLog(`voice cache: unable to copy cache file: ${getErrorMessage(error)}`);
+      try {
+        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      } catch {}
+      return false;
+    }
+  };
+
+  const playCachedVoiceFile = async (cacheFile: string): Promise<boolean> => {
+    if (!fs.existsSync(cacheFile)) {
+      return false;
+    }
+
+    try {
+      const now = new Date();
+      fs.utimesSync(cacheFile, now, now);
+    } catch {}
+
+    debugLog(`voice cache: hit ${cacheFile}`);
+    await playAudioFile(cacheFile);
+    return true;
+  };
+
+  const createTempAudioFile = (prefix: string, extension: string): string => {
+    const uniquePart = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return path.join(os.tmpdir(), `${prefix}-${uniquePart}.${normalizeCacheExtension(extension)}`);
+  };
+
   /**
    * ElevenLabs Engine (Online, High Quality, Anime-like voices)
    */
   const speakWithElevenLabs = async (text: string): Promise<boolean> => {
+    const voiceId = config.elevenLabsVoiceId || 'cgSgspJ2msm6clMCkdW9';
+    const model = config.elevenLabsModel || 'eleven_turbo_v2_5';
+    const stability = config.elevenLabsStability ?? 0.5;
+    const similarity = config.elevenLabsSimilarity ?? 0.75;
+    const style = config.elevenLabsStyle ?? 0.5;
+    const cacheFile = getVoiceCacheFile(
+      'elevenlabs',
+      text,
+      { voiceId, model, stability, similarity, style },
+      'mp3',
+    );
+
+    if (cacheFile && (await playCachedVoiceFile(cacheFile))) {
+      return true;
+    }
+
     if (elevenLabsQuotaExceeded) return false;
 
     if (!config.elevenLabsApiKey) {
@@ -346,28 +613,34 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
 
       const elevenLabsPayload = {
         text,
-        model_id: config.elevenLabsModel || 'eleven_turbo_v2_5',
+        model_id: model,
         voice_settings: {
-          stability: config.elevenLabsStability ?? 0.5,
-          similarity_boost: config.elevenLabsSimilarity ?? 0.75,
-          style: config.elevenLabsStyle ?? 0.5,
+          stability,
+          similarity_boost: similarity,
+          style,
           use_speaker_boost: true,
         },
       } as unknown as Parameters<typeof elClient.textToSpeech.convert>[1];
 
-      const audio = await elClient.textToSpeech.convert(config.elevenLabsVoiceId || 'cgSgspJ2msm6clMCkdW9', elevenLabsPayload);
+      const audio = await elClient.textToSpeech.convert(voiceId, elevenLabsPayload);
 
-      const tempFile = path.join(os.tmpdir(), `opencode-tts-${Date.now()}.mp3`);
       const chunks: Buffer[] = [];
       for await (const chunk of audio as AsyncIterable<unknown>) {
         chunks.push(toBufferChunk(chunk));
       }
-      fs.writeFileSync(tempFile, Buffer.concat(chunks));
+      const audioBuffer = Buffer.concat(chunks);
+      const cacheWritten = cacheFile ? writeVoiceCacheBuffer(cacheFile, audioBuffer) : false;
+      const audioFile = cacheWritten && cacheFile ? cacheFile : createTempAudioFile('opencode-tts', 'mp3');
+      if (!cacheWritten) {
+        fs.writeFileSync(audioFile, audioBuffer);
+      }
 
-      await playAudioFile(tempFile);
-      try {
-        fs.unlinkSync(tempFile);
-      } catch {}
+      await playAudioFile(audioFile);
+      if (!cacheWritten) {
+        try {
+          fs.unlinkSync(audioFile);
+        } catch {}
+      }
       return true;
     } catch (error) {
       debugLog(`speakWithElevenLabs error: ${getErrorMessage(error) || String(error) || 'Unknown error'}`);
@@ -400,7 +673,13 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
     const pitch = config.edgePitch || '+0Hz';
     const rate = config.edgeRate || '+10%';
     const volume = config.edgeVolume || '+0%';
-    const tempFile = path.join(os.tmpdir(), `opencode-edge-tts-${Date.now()}.mp3`);
+    const cacheFile = getVoiceCacheFile('edge', text, { voice, pitch, rate, volume }, 'mp3');
+
+    if (cacheFile && (await playCachedVoiceFile(cacheFile))) {
+      return true;
+    }
+
+    const tempFile = cacheFile ? `${cacheFile}.${process.pid}.${Date.now()}.tmp` : createTempAudioFile('opencode-edge-tts', 'mp3');
 
     // Escape text for shell (replace quotes with escaped quotes)
     const escapedText = text.replace(/"/g, '\\"');
@@ -414,10 +693,14 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
           .nothrow();
 
         if (fs.existsSync(tempFile)) {
-          await playAudioFile(tempFile);
-          try {
-            fs.unlinkSync(tempFile);
-          } catch {}
+          const cacheWritten = cacheFile ? commitVoiceCacheFile(tempFile, cacheFile) : false;
+          const audioFile = cacheWritten && cacheFile ? cacheFile : tempFile;
+          await playAudioFile(audioFile);
+          if (!cacheWritten) {
+            try {
+              fs.unlinkSync(tempFile);
+            } catch {}
+          }
           debugLog('speakWithEdgeTTS: success via Python edge-tts CLI');
           return true;
         }
@@ -436,9 +719,15 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
 
       const { audioFilePath } = await tts.toFile(os.tmpdir(), text, { pitch, rate, volume });
 
-      await playAudioFile(audioFilePath);
+      const cacheWritten = cacheFile ? copyVoiceCacheFile(cacheFile, audioFilePath) : false;
+      const audioFile = cacheWritten && cacheFile ? cacheFile : audioFilePath;
+      await playAudioFile(audioFile);
       try {
-        fs.unlinkSync(audioFilePath);
+        if (audioFilePath !== audioFile) {
+          fs.unlinkSync(audioFilePath);
+        } else if (!cacheWritten) {
+          fs.unlinkSync(audioFilePath);
+        }
       } catch {}
       debugLog('speakWithEdgeTTS: success via msedge-tts npm package');
       return true;
@@ -452,7 +741,7 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
    * Windows SAPI Engine (Offline, Built-in)
    */
   const speakWithSAPI = async (text: string): Promise<boolean> => {
-    if (platform !== 'win32') {
+    if (currentPlatform !== 'win32') {
       debugLog('speakWithSAPI: skipped (not Windows)');
       return false;
     }
@@ -461,6 +750,7 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
       return false;
     }
     const scriptPath = path.join(os.tmpdir(), `opencode-sapi-${Date.now()}.ps1`);
+    let sapiOutputFile: string | null = null;
     try {
       const escapedText = text
         .replace(/&/g, '&amp;')
@@ -473,6 +763,16 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
       const pitch = config.sapiPitch || 'medium';
       const volume = config.sapiVolume || 'loud';
       const ratePercent = rate >= 0 ? `+${rate * 10}%` : `${rate * 5}%`;
+      const cacheFile = getVoiceCacheFile('sapi', text, { voice, rate, pitch, volume }, 'wav');
+
+      if (cacheFile && (await playCachedVoiceFile(cacheFile))) {
+        return true;
+      }
+
+      sapiOutputFile = cacheFile ? `${cacheFile}.${process.pid}.${Date.now()}.tmp.wav` : null;
+      const setOutputToCacheFile = sapiOutputFile
+        ? `$synth.SetOutputToWaveFile('${sapiOutputFile.replace(/'/g, "''")}')`
+        : '';
 
       const ssml = `<?xml version="1.0" encoding="UTF-8"?>
 <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
@@ -489,6 +789,7 @@ $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
 try {
     $synth.Rate = ${rate}
     try { $synth.SelectVoice("${voice.replace(/"/g, '""')}") } catch { }
+    ${setOutputToCacheFile}
     $ssml = @"
 ${ssml}
 "@
@@ -507,6 +808,16 @@ ${ssml}
         debugLog(`speakWithSAPI failed with code ${result.exitCode}: ${outputToString(result.stderr)}`);
         return false;
       }
+
+      if (cacheFile && sapiOutputFile) {
+        if (commitVoiceCacheFile(sapiOutputFile, cacheFile)) {
+          await playAudioFile(cacheFile);
+          return true;
+        }
+        debugLog('speakWithSAPI: cache output file was not created');
+        return false;
+      }
+
       return true;
     } catch (error) {
       debugLog(`speakWithSAPI error: ${getErrorMessage(error) || String(error) || 'Unknown error'}`);
@@ -515,6 +826,9 @@ ${ssml}
       try {
         if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
       } catch {}
+      try {
+        if (sapiOutputFile && fs.existsSync(sapiOutputFile)) fs.unlinkSync(sapiOutputFile);
+      } catch {}
     }
   };
 
@@ -522,7 +836,7 @@ ${ssml}
    * macOS Say Engine
    */
   const speakWithSay = async (text: string): Promise<boolean> => {
-    if (platform !== 'darwin' || !shell) return false;
+    if (currentPlatform !== 'darwin' || !shell) return false;
     try {
       await shell`say ${text}`.quiet();
       return true;
@@ -537,13 +851,23 @@ ${ssml}
    * Calls /v1/audio/speech endpoint with configurable base URL
    */
   const speakWithOpenAI = async (text: string): Promise<boolean> => {
-    if (!config.openaiTtsEndpoint) {
+    const endpoint = config.openaiTtsEndpoint.replace(/\/$/, '');
+    const model = config.openaiTtsModel || 'tts-1';
+    const voice = config.openaiTtsVoice || 'alloy';
+    const format = config.openaiTtsFormat || 'mp3';
+    const speed = config.openaiTtsSpeed ?? 1.0;
+    const cacheFile = getVoiceCacheFile('openai', text, { endpoint, model, voice, format, speed }, format);
+
+    if (cacheFile && (await playCachedVoiceFile(cacheFile))) {
+      return true;
+    }
+
+    if (!endpoint) {
       debugLog('speakWithOpenAI: No endpoint configured');
       return false;
     }
 
     try {
-      const endpoint = config.openaiTtsEndpoint.replace(/\/$/, '');
       const url = `${endpoint}/v1/audio/speech`;
 
       const headers: Record<string, string> = {
@@ -556,11 +880,11 @@ ${ssml}
       }
 
       const body = {
-        model: config.openaiTtsModel || 'tts-1',
+        model,
         input: text,
-        voice: config.openaiTtsVoice || 'alloy',
-        response_format: config.openaiTtsFormat || 'mp3',
-        speed: config.openaiTtsSpeed ?? 1.0,
+        voice,
+        response_format: format,
+        speed,
       };
 
       debugLog(`speakWithOpenAI: Calling ${url} with voice=${body.voice}, model=${body.model}`);
@@ -577,14 +901,19 @@ ${ssml}
         return false;
       }
 
-      const audioBuffer = await response.arrayBuffer();
-      const tempFile = path.join(os.tmpdir(), `opencode-tts-openai-${Date.now()}.mp3`);
-      fs.writeFileSync(tempFile, Buffer.from(audioBuffer));
+      const audioBuffer = Buffer.from(await response.arrayBuffer());
+      const cacheWritten = cacheFile ? writeVoiceCacheBuffer(cacheFile, audioBuffer) : false;
+      const audioFile = cacheWritten && cacheFile ? cacheFile : createTempAudioFile('opencode-tts-openai', format);
+      if (!cacheWritten) {
+        fs.writeFileSync(audioFile, audioBuffer);
+      }
 
-      await playAudioFile(tempFile);
-      try {
-        fs.unlinkSync(tempFile);
-      } catch {}
+      await playAudioFile(audioFile);
+      if (!cacheWritten) {
+        try {
+          fs.unlinkSync(audioFile);
+        } catch {}
+      }
       return true;
     } catch (error) {
       debugLog(`speakWithOpenAI error: ${getErrorMessage(error) || String(error) || 'Unknown error'}`);
@@ -596,12 +925,12 @@ ${ssml}
    * Get the current system idle time in seconds.
    */
   const getSystemIdleSeconds = async (): Promise<number> => {
-    if (platform === 'linux') {
+    if (currentPlatform === 'linux') {
       // On Linux, we can't reliably detect idle time across all DEs
       // Return a high value to always attempt wake (it's a no-op if already awake)
       return 999;
     }
-    if (platform !== 'win32' || !shell) return 999;
+    if (currentPlatform !== 'win32' || !shell) return 999;
     try {
       const cmd = `
         Add-Type -TypeDefinition @'
@@ -639,10 +968,10 @@ public static class IdleCheck {
    */
   const getCurrentVolume = async (): Promise<number> => {
     // Use Linux platform module
-    if (platform === 'linux' && linux) {
+    if (currentPlatform === 'linux' && linux) {
       return await linux.getCurrentVolume();
     }
-    if (platform !== 'win32' || !shell) return -1;
+    if (currentPlatform !== 'win32' || !shell) return -1;
     try {
       const cmd = `
         $signature = @'
@@ -680,14 +1009,14 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
 
       debugLog(`wakeMonitor: attempting to wake monitor (idle: ${idleSeconds}s, force: ${force})`);
 
-      if (platform === 'win32') {
+      if (currentPlatform === 'win32') {
         const cmd = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{F15}')`;
         await shell`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${cmd}`.quiet();
         debugLog('wakeMonitor: Windows wake command executed');
-      } else if (platform === 'darwin') {
+      } else if (currentPlatform === 'darwin') {
         await shell`caffeinate -u -t 1`.quiet();
         debugLog('wakeMonitor: macOS wake command executed');
-      } else if (platform === 'linux' && linux) {
+      } else if (currentPlatform === 'linux' && linux) {
         // Use the Linux platform module for wake monitor
         await linux.wakeMonitor();
         debugLog('wakeMonitor: Linux wake command executed');
@@ -709,12 +1038,12 @@ public static extern int waveOutGetVolume(IntPtr hwo, out uint dwVolume);
         if (currentVolume >= 0 && currentVolume >= volumeThreshold) return;
       }
 
-      if (platform === 'win32') {
+      if (currentPlatform === 'win32') {
         const cmd = `$wsh = New-Object -ComObject WScript.Shell; 1..50 | ForEach-Object { $wsh.SendKeys([char]175) }`;
         await shell`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${cmd}`.quiet();
-      } else if (platform === 'darwin') {
+      } else if (currentPlatform === 'darwin') {
         await shell`osascript -e "set volume output volume 100"`.quiet();
-      } else if (platform === 'linux' && linux) {
+      } else if (currentPlatform === 'linux' && linux) {
         // Use the Linux platform module for force volume
         await linux.forceVolume();
       }

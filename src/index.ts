@@ -5,18 +5,16 @@ import path from 'path';
 import type { AIContext, NotificationEventType, PluginConfig } from './types/config.js';
 import type { PendingReminder, PluginState, ScheduleReminderOptions, SmartNotifyOptions } from './types/events.js';
 import type { DesktopNotifyOptions, WebhookNotifyOptions } from './types/notification.js';
-import type { PluginEvent, PluginHandlers, PluginInitParams, Session } from './types/opencode-sdk.js';
+import type { PluginEvent, PluginHandlers, PluginInput, Session, SessionGetResult, ToastVariant, TUIToastPayload } from './types/opencode-sdk.js';
 import type { TTSAPI } from './types/tts.js';
 
-import { createTTS, getTTSConfig } from './util/tts.js';
+import { createTTS } from './util/tts.js';
 import { getSmartMessage } from './util/ai-messages.js';
 import { notifyTaskComplete, notifyPermissionRequest, notifyQuestion, notifyError } from './util/desktop-notify.js';
 import { notifyWebhookIdle, notifyWebhookPermission, notifyWebhookError, notifyWebhookQuestion } from './util/webhook.js';
 import { isTerminalFocused } from './util/focus-detect.js';
 import { pickThemeSound } from './util/sound-theme.js';
 import { getProjectSound } from './util/per-project-sound.js';
-
-type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
 interface NotificationMetaOptions {
   count?: number;
@@ -60,8 +58,11 @@ export default async function SmartVoiceNotifyPlugin({
   $,
   directory,
   worktree,
-}: PluginInitParams): Promise<PluginHandlers> {
-  let config: PluginConfig = getTTSConfig();
+}: PluginInput): Promise<PluginHandlers> {
+  // Create the TTS utility once and reuse its loaded config instead of re-reading
+  // smart-voice-notify.jsonc on every OpenCode event.
+  let tts: TTSAPI = createTTS({ $, client });
+  let config: PluginConfig = tts.config;
 
   // Derive project name from worktree path since SDK's Project type doesn't have a 'name' property
   // Example: C:\Repository\opencode-smart-voice-notify -> opencode-smart-voice-notify
@@ -91,11 +92,21 @@ export default async function SmartVoiceNotifyPlugin({
   }
 
 
-  let tts: TTSAPI = createTTS({ $, client });
-
   const configDir = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
   const logsDir = path.join(configDir, 'logs');
   const logFile = path.join(logsDir, 'smart-voice-notify-debug.log');
+  const configFilePath = path.join(configDir, 'smart-voice-notify.jsonc');
+
+  const getConfigFileSignature = (): string => {
+    try {
+      const stats = fs.statSync(configFilePath);
+      return `${stats.mtimeMs}:${stats.size}`;
+    } catch {
+      return 'missing';
+    }
+  };
+
+  let configFileSignature = getConfigFileSignature();
   
   // Ensure logs directory exists if debug logging is enabled
   if (config.debugLog && !fs.existsSync(logsDir)) {
@@ -154,7 +165,7 @@ export default async function SmartVoiceNotifyPlugin({
   let permissionBatchTimeout: PluginState['permissionBatchTimeout'] = null;
   
   // Batch window duration in milliseconds (how long to wait for more permissions)
-  const PERMISSION_BATCH_WINDOW_MS = config.permissionBatchWindowMs || 800;
+  const getPermissionBatchWindowMs = (): number => config.permissionBatchWindowMs || 800;
 
   // ========================================
   // QUESTION BATCHING STATE (SDK v1.1.7+)
@@ -169,11 +180,14 @@ export default async function SmartVoiceNotifyPlugin({
   let questionBatchTimeout: PluginState['questionBatchTimeout'] = null;
   
   // Batch window duration in milliseconds (how long to wait for more questions)
-  const QUESTION_BATCH_WINDOW_MS = config.questionBatchWindowMs || 800;
+  const getQuestionBatchWindowMs = (): number => config.questionBatchWindowMs || 800;
   
   // Track active question request to prevent race condition where user responds
   // before async notification code runs. Set on question.asked, cleared on question.replied/rejected.
   let activeQuestionId: PluginState['activeQuestionId'] = null;
+
+  let sessionGetShape: 'v1' | 'v2' | null = null;
+  let tuiShowToastShape: 'v1' | 'v2' | null = null;
 
   /**
    * Write debug message to log file
@@ -184,6 +198,24 @@ export default async function SmartVoiceNotifyPlugin({
       const timestamp = new Date().toISOString();
       fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
     } catch {}
+  };
+
+  /**
+   * Refresh config and TTS only when the config file changes.
+   * This preserves live config updates without re-reading JSONC or creating a
+   * new TTS instance for every high-volume OpenCode event.
+   */
+  const refreshConfigIfChanged = (): void => {
+    const latestSignature = getConfigFileSignature();
+    if (latestSignature === configFileSignature) {
+      return;
+    }
+
+    const previousSignature = configFileSignature;
+    tts = createTTS({ $, client });
+    config = tts.config;
+    configFileSignature = getConfigFileSignature();
+    debugLog(`Config changed (${previousSignature} -> ${configFileSignature}); reloaded config and TTS instance`);
   };
 
   /**
@@ -201,6 +233,59 @@ export default async function SmartVoiceNotifyPlugin({
     }
 
     return removedCount;
+  };
+
+  const isClientShapeError = (error: unknown): boolean => {
+    const message = getErrorMessage(error).toLowerCase();
+    return (
+      error instanceof TypeError ||
+      message.includes('sessionid') ||
+      message.includes('session id') ||
+      (message.includes('path') && message.includes('id')) ||
+      (message.includes('required') && message.includes('id'))
+    );
+  };
+
+  const normalizeSessionGetResult = (result: SessionGetResult): Session | null => {
+    if (result && typeof result === 'object' && 'data' in result) {
+      return (result as { data?: Session | null }).data ?? null;
+    }
+    return (result ?? null) as Session | null;
+  };
+
+  const hasMismatchedSessionId = (sessionData: Session | null, sessionID: string): boolean => {
+    return (
+      !!sessionData &&
+      typeof sessionData === 'object' &&
+      Object.prototype.hasOwnProperty.call(sessionData, 'id') &&
+      sessionData.id !== sessionID
+    );
+  };
+
+  const getSessionById = async (sessionID: string): Promise<Session | null> => {
+    if (sessionGetShape === 'v1') {
+      return normalizeSessionGetResult(await client.session.get({ path: { id: sessionID } }));
+    }
+
+    if (sessionGetShape === 'v2') {
+      return normalizeSessionGetResult(await client.session.get({ sessionID }));
+    }
+
+    try {
+      const legacySession = normalizeSessionGetResult(await client.session.get({ path: { id: sessionID } }));
+      if (!hasMismatchedSessionId(legacySession, sessionID)) {
+        sessionGetShape = 'v1';
+        return legacySession;
+      }
+    } catch (error) {
+      if (!isClientShapeError(error)) {
+        throw error;
+      }
+    }
+
+    const session = await client.session.get({ sessionID });
+    sessionGetShape = 'v2';
+    return normalizeSessionGetResult(session);
   };
 
   /**
@@ -228,8 +313,7 @@ export default async function SmartVoiceNotifyPlugin({
       debugLog(`${eventType}: session cache miss for ${sessionID}`);
     }
 
-    const session = await client.session.get({ path: { id: sessionID } });
-    const sessionData = session?.data ?? null;
+    const sessionData = await getSessionById(sessionID);
     sessionCache.set(sessionID, { data: sessionData, timestamp: now });
     debugLog(`${eventType}: cached session details for ${sessionID} (ttl=${SESSION_CACHE_TTL}ms)`);
     return sessionData;
@@ -289,13 +373,25 @@ export default async function SmartVoiceNotifyPlugin({
     if (!config.enableToast) return;
     try {
       if (typeof client?.tui?.showToast === 'function') {
-        await client.tui.showToast({
-          body: {
-            message: message,
-            variant: variant,
-            duration: duration
-          }
-        });
+        const toastPayload: TUIToastPayload = { message, variant, duration };
+
+        if (tuiShowToastShape === 'v1') {
+          await client.tui.showToast({ body: toastPayload });
+          return;
+        }
+
+        if (tuiShowToastShape === 'v2') {
+          await client.tui.showToast(toastPayload);
+          return;
+        }
+
+        try {
+          await client.tui.showToast(toastPayload);
+          tuiShowToastShape = 'v2';
+        } catch {
+          await client.tui.showToast({ body: toastPayload });
+          tuiShowToastShape = 'v1';
+        }
       }
     } catch {}
   };
@@ -1068,15 +1164,36 @@ export default async function SmartVoiceNotifyPlugin({
     }
   };
 
+  const dispose = (): void => {
+    cancelAllPendingReminders();
+
+    pendingPermissionBatch = [];
+    if (permissionBatchTimeout) {
+      clearTimeout(permissionBatchTimeout);
+      permissionBatchTimeout = null;
+    }
+
+    pendingQuestionBatch = [];
+    if (questionBatchTimeout) {
+      clearTimeout(questionBatchTimeout);
+      questionBatchTimeout = null;
+    }
+
+    activePermissionId = null;
+    activeQuestionId = null;
+    lastSessionIdleTime = 0;
+    lastUserActivityTime = Date.now();
+    seenUserMessageIds.clear();
+    lastIdleNotificationTime.clear();
+    sessionCache.clear();
+
+    debugLog('dispose: cleared pending reminders, timers, and cached event state');
+  };
+
   return {
+    dispose,
     event: async ({ event }: { event: PluginEvent }): Promise<void> => {
-      // Reload config on every event to support live configuration changes
-      // without requiring a plugin restart.
-      config = getTTSConfig();
-      
-      // Update TTS utility instance with latest config
-      // Note: createTTS internally calls getTTSConfig(), so it will have up-to-date values
-      tts = createTTS({ $, client });
+      refreshConfigIfChanged();
 
       // Master switch check - if disabled, skip all event processing
       // Handle both boolean false and string "false"/"disabled"
@@ -1092,7 +1209,7 @@ export default async function SmartVoiceNotifyPlugin({
         }
         
         // Only log once per event to avoid flooding
-        if (event.type === "session.idle" || event.type === "permission.asked" || event.type === "question.asked") {
+        if (event.type === "session.idle" || event.type === "permission.asked" || event.type === "permission.v2.asked" || event.type === "question.asked" || event.type === "question.v2.asked") {
           debugLog(`Plugin is disabled via config (enabled: ${config.enabled}) - skipping ${event.type}`);
         }
         return;
@@ -1104,16 +1221,21 @@ export default async function SmartVoiceNotifyPlugin({
         // USER ACTIVITY DETECTION
         // Cancels pending TTS reminders when user responds
         // ========================================
-        // NOTE: OpenCode event types (supporting SDK v1.0.x, v1.1.x, and v1.1.7+):
+        // NOTE: OpenCode event types (supporting SDK v1.0.x, v1.1.x, v1.1.7+, and v1.17+):
         //   - message.updated: fires when a message is added/updated (use properties.info.role to check user vs assistant)
         //   - permission.updated (SDK v1.0.x): fires when a permission request is created
         //   - permission.asked (SDK v1.1.1+): fires when a permission request is created (replaces permission.updated)
+        //   - permission.v2.asked (SDK v1.17+): v2 permission request format
         //   - permission.replied: fires when user responds to a permission request
         //     - SDK v1.0.x: uses permissionID, response
         //     - SDK v1.1.1+: uses requestID, reply
+        //   - permission.v2.replied (SDK v1.17+): v2 permission reply format
         //   - question.asked (SDK v1.1.7+): fires when agent asks user a question
+        //   - question.v2.asked (SDK v1.17+): v2 question request format
         //   - question.replied (SDK v1.1.7+): fires when user answers a question
+        //   - question.v2.replied (SDK v1.17+): v2 question reply format
         //   - question.rejected (SDK v1.1.7+): fires when user dismisses a question
+        //   - question.v2.rejected (SDK v1.17+): fires when user dismisses a v2 question
         //   - session.created: fires when a new session starts
         //
         // CRITICAL: message.updated fires for EVERY modification to a message (not just creation).
@@ -1157,7 +1279,7 @@ export default async function SmartVoiceNotifyPlugin({
           }
         }
         
-        if (event.type === "permission.replied") {
+        if (event.type === "permission.replied" || event.type === "permission.v2.replied") {
           // User responded to a permission request (granted or denied)
           // Structure varies by SDK version:
           //   - Old SDK: event.properties.{ sessionID, permissionID, response }
@@ -1474,7 +1596,7 @@ export default async function SmartVoiceNotifyPlugin({
         //
         // BATCHING: When multiple permissions arrive simultaneously (e.g., 5 at once),
         // we batch them into a single notification instead of playing 5 overlapping sounds.
-        if (event.type === "permission.updated" || event.type === "permission.asked") {
+        if (event.type === "permission.updated" || event.type === "permission.asked" || event.type === "permission.v2.asked") {
           // Check if permission notifications are enabled
           if (config.enablePermissionNotification === false) {
             debugLog(`${event.type}: skipped (enablePermissionNotification=false)`);
@@ -1499,20 +1621,29 @@ export default async function SmartVoiceNotifyPlugin({
           }
           
           // Reset the batch window timer (debounce)
-          // This gives more permissions a chance to arrive before we notify
+          // This gives more permissions a chance to arrive before we notify.
+          // v2 asked events are flushed immediately so callers awaiting the v2 hook
+          // observe the notification before the handler resolves.
           if (permissionBatchTimeout) {
             clearTimeout(permissionBatchTimeout);
+            permissionBatchTimeout = null;
           }
-          
+
+          if (event.type === "permission.v2.asked") {
+            await processPermissionBatch();
+            debugLog(`${event.type}: processed immediately through permission batch pipeline`);
+          } else {
+            const permissionBatchWindowMs = getPermissionBatchWindowMs();
             permissionBatchTimeout = setTimeout(async () => {
               try {
                 await processPermissionBatch();
               } catch (error) {
                 debugLog(`processPermissionBatch error: ${getErrorMessage(error)}`);
               }
-            }, PERMISSION_BATCH_WINDOW_MS);
-          
-          debugLog(`${event.type}: batch window reset (will process in ${PERMISSION_BATCH_WINDOW_MS}ms if no more arrive)`);
+            }, permissionBatchWindowMs);
+            
+            debugLog(`${event.type}: batch window reset (will process in ${permissionBatchWindowMs}ms if no more arrive)`);
+          }
         }
 
         // ========================================
@@ -1524,10 +1655,10 @@ export default async function SmartVoiceNotifyPlugin({
         // BATCHING: When multiple question requests arrive simultaneously,
         // we batch them into a single notification instead of playing overlapping sounds.
         // NOTE: Each question.asked event can contain multiple questions in its questions array.
-        if (event.type === "question.asked") {
+        if (event.type === "question.asked" || event.type === "question.v2.asked") {
           // Check if question notifications are enabled
           if (config.enableQuestionNotification === false) {
-            debugLog('question.asked: skipped (enableQuestionNotification=false)');
+            debugLog(`${event.type}: skipped (enableQuestionNotification=false)`);
             return;
           }
 
@@ -1553,24 +1684,33 @@ export default async function SmartVoiceNotifyPlugin({
           }
           
           // Reset the batch window timer (debounce)
-          // This gives more questions a chance to arrive before we notify
+          // This gives more questions a chance to arrive before we notify.
+          // v2 asked events are flushed immediately so callers awaiting the v2 hook
+          // observe the notification before the handler resolves.
           if (questionBatchTimeout) {
             clearTimeout(questionBatchTimeout);
+            questionBatchTimeout = null;
           }
           
-          questionBatchTimeout = setTimeout(async () => {
-            try {
-              await processQuestionBatch();
-            } catch (error) {
-              debugLog(`processQuestionBatch error: ${getErrorMessage(error)}`);
-            }
-          }, QUESTION_BATCH_WINDOW_MS);
-          
-          debugLog(`${event.type}: batch window reset (will process in ${QUESTION_BATCH_WINDOW_MS}ms if no more arrive)`);
+          if (event.type === "question.v2.asked") {
+            await processQuestionBatch();
+            debugLog(`${event.type}: processed immediately through question batch pipeline`);
+          } else {
+            const questionBatchWindowMs = getQuestionBatchWindowMs();
+            questionBatchTimeout = setTimeout(async () => {
+              try {
+                await processQuestionBatch();
+              } catch (error) {
+                debugLog(`processQuestionBatch error: ${getErrorMessage(error)}`);
+              }
+            }, questionBatchWindowMs);
+            
+            debugLog(`${event.type}: batch window reset (will process in ${questionBatchWindowMs}ms if no more arrive)`);
+          }
         }
 
         // Handle question.replied - user answered the question(s)
-        if (event.type === "question.replied") {
+        if (event.type === "question.replied" || event.type === "question.v2.replied") {
           const repliedQuestionId = event.properties?.requestID;
           const answers = event.properties?.answers;
           
@@ -1600,7 +1740,7 @@ export default async function SmartVoiceNotifyPlugin({
         }
 
         // Handle question.rejected - user dismissed the question
-        if (event.type === "question.rejected") {
+        if (event.type === "question.rejected" || event.type === "question.v2.rejected") {
           const rejectedQuestionId = event.properties?.requestID;
           
           // Remove this question from the pending batch (if still waiting)

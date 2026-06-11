@@ -1,9 +1,16 @@
 // @ts-nocheck
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 
 // Mock proxies to control from tests
+const mockExecFile = mock((file, args, options, callback) => {
+  const done = typeof options === 'function' ? options : callback;
+  queueMicrotask(() => done?.(null, '', ''));
+  return { kill: mock(() => {}) };
+});
+
 const mockElevenLabsConvert = mock(() => Promise.resolve({
   [Symbol.asyncIterator]: async function* () {
     yield Buffer.from('audio');
@@ -14,6 +21,10 @@ const mockEdgeTTSSetMetadata = mock(() => Promise.resolve());
 const mockEdgeTTSToFile = mock(() => Promise.resolve({ audioFilePath: 'edge-tts.mp3' }));
 
 // Mock the dependencies before importing tts.js
+mock.module('node:child_process', () => ({
+  execFile: mockExecFile,
+}));
+
 mock.module('@elevenlabs/elevenlabs-js', () => ({
   ElevenLabsClient: class {
     constructor() {
@@ -131,6 +142,7 @@ describe('tts.js', () => {
   describe('playAudioFile()', () => {
     let mockShell;
     let tts;
+    let platformSpy;
 
     beforeEach(() => {
       createTestTempDir();
@@ -139,16 +151,25 @@ describe('tts.js', () => {
     });
 
     afterEach(() => {
+      platformSpy?.mockRestore();
       cleanupTestTempDir();
     });
 
-    it('should call powershell on win32', async () => {
+    const createTTSForPlatform = (platform) => {
+      platformSpy?.mockRestore();
+      platformSpy = spyOn(os, 'platform').mockReturnValue(platform);
+      mockShell = createMockShellRunner();
+      tts = createTTS({ $: mockShell, client: createMockClient() });
+      return tts;
+    };
+
+    it('should call powershell MCI playback on win32', async () => {
       // Assuming we are on win32 as per environment
       if (process.platform === 'win32') {
         await tts.playAudioFile('test.mp3');
         expect(mockShell.getCallCount()).toBe(1);
         expect(mockShell.getLastCall().command).toContain('powershell.exe');
-        expect(mockShell.getLastCall().command).toContain('MediaPlayer');
+        expect(mockShell.getLastCall().command).toContain('mciSendString');
         expect(mockShell.getLastCall().command).toContain('test.mp3');
       }
     });
@@ -159,6 +180,49 @@ describe('tts.js', () => {
         expect(mockShell.getCallCount()).toBe(1); // One powershell call with a loop inside
         expect(mockShell.getLastCall().command).toContain('-lt 3');
       }
+    });
+
+    it('should use direct PowerShell execution when the OpenCode shell runner is unavailable on win32', async () => {
+      if (process.platform === 'win32') {
+        mockExecFile.mockClear();
+        tts = createTTS({ client: createMockClient() });
+
+        await tts.playAudioFile('C:\\temp\\notify.mp3');
+
+        expect(mockExecFile).toHaveBeenCalledTimes(1);
+        expect(mockExecFile.mock.calls[0][0]).toBe('powershell.exe');
+        expect(mockExecFile.mock.calls[0][1]).toContain('-Command');
+        expect(mockExecFile.mock.calls[0][1].join(' ')).toContain('mciSendString');
+      }
+    });
+
+    it('should dispatch to Windows MCI playback when os.platform() reports win32', async () => {
+      tts = createTTSForPlatform('win32');
+
+      await tts.playAudioFile('notify.mp3', 2);
+
+      expect(mockShell.getCallCount()).toBe(1);
+      expect(mockShell.getLastCall().command).toContain('powershell.exe');
+      expect(mockShell.getLastCall().command).toContain('mciSendString');
+      expect(mockShell.getLastCall().command).toContain('-lt 2');
+    });
+
+    it('should dispatch to afplay when os.platform() reports darwin', async () => {
+      tts = createTTSForPlatform('darwin');
+
+      await tts.playAudioFile('/tmp/notify.mp3', 2);
+
+      expect(mockShell.getCallCount()).toBe(2);
+      expect(mockShell.getCalls().every((call) => call.command.includes('afplay /tmp/notify.mp3'))).toBe(true);
+    });
+
+    it('should dispatch to Linux audio playback when os.platform() reports linux', async () => {
+      tts = createTTSForPlatform('linux');
+
+      await tts.playAudioFile('/tmp/notify.mp3', 2);
+
+      expect(mockShell.getCallCount()).toBe(2);
+      expect(mockShell.getCalls().every((call) => call.command.includes('paplay /tmp/notify.mp3'))).toBe(true);
     });
   });
 
@@ -410,7 +474,7 @@ describe('tts.js', () => {
 
     beforeEach(() => {
       createTestTempDir();
-      // Create config with forceVolume enabled (default is now false per Issue #8)
+      // Create config with forceVolume enabled (default is now false)
       createTestConfig(createMinimalConfig({ forceVolume: true, volumeThreshold: 50 }));
       mockShell = createMockShellRunner();
       tts = createTTS({ $: mockShell, client: createMockClient() });
@@ -485,7 +549,7 @@ describe('tts.js', () => {
 
     beforeEach(() => {
       createTestTempDir();
-      // Create config with forceVolume enabled (default is now false per Issue #8)
+      // Create config with forceVolume enabled (default is now false)
       createTestConfig(createMinimalConfig({ forceVolume: true, volumeThreshold: 50, wakeMonitor: true }));
       mockShell = createMockShellRunner();
       tts = createTTS({ $: mockShell, client: createMockClient() });

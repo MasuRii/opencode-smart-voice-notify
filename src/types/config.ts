@@ -88,6 +88,11 @@ export interface PluginConfig {
   openaiTtsFormat: OpenAITtsFormat;
   openaiTtsSpeed: number;
 
+  // Voice cache
+  enableVoiceCache: boolean;
+  voiceCacheDir: string;
+  voiceCacheMaxSizeMB: number;
+
   // Message pools
   idleTTSMessages: string[];
   permissionTTSMessages: string[];

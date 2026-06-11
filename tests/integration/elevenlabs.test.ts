@@ -47,7 +47,7 @@ describe.skipIf(!hasElevenLabsKey)('ElevenLabs Integration', () => {
     const lastCall = mockShell.getLastCall();
     if (process.platform === 'win32') {
       expect(lastCall.command).toContain('powershell.exe');
-      expect(lastCall.command).toContain('MediaPlayer');
+      expect(lastCall.command).toContain('mciSendString');
     } else if (process.platform === 'darwin') {
       expect(lastCall.command).toContain('afplay');
     }

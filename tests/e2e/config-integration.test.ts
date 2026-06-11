@@ -112,7 +112,7 @@ describe('Plugin E2E (Config Integration)', () => {
       
       // Verify TTS was called (platform-aware check)
       // Edge TTS generates audio and plays via playAudioFile
-      // On Windows this uses MediaPlayer, on Linux paplay/aplay, on macOS afplay
+      // On Windows this uses MCI playback, on Linux paplay/aplay, on macOS afplay
       expect(wasTTSCalled(mockShell)).toBe(true);
     });
   });

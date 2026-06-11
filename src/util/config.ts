@@ -164,6 +164,9 @@ export const getDefaultConfigObject = (): PluginConfig => ({
   openaiTtsVoice: 'alloy',
   openaiTtsFormat: 'mp3',
   openaiTtsSpeed: 1.0,
+  enableVoiceCache: false,
+  voiceCacheDir: 'voice-cache',
+  voiceCacheMaxSizeMB: 100,
   idleTTSMessages: [
     'All done! Your task has been completed successfully.',
     'Hey there! I finished working on your request.',
@@ -558,6 +561,21 @@ const generateDefaultConfig = (overrides: Partial<PluginConfig> = {}, version = 
     
     // Speech speed: 0.25 to 4.0 (1.0 = normal)
     "openaiTtsSpeed": ${overrides.openaiTtsSpeed !== undefined ? overrides.openaiTtsSpeed : 1.0},
+    
+    // ============================================================
+    // VOICE CACHE SETTINGS (Optional local TTS audio cache)
+    // ============================================================
+    // Cache generated TTS audio locally so repeated messages can replay
+    // without calling cloud/self-hosted TTS services again.
+    // Disabled by default to preserve existing behavior and disk usage.
+    "enableVoiceCache": ${overrides.enableVoiceCache !== undefined ? overrides.enableVoiceCache : false},
+    
+    // Directory for cached voice audio. Relative paths are resolved from
+    // ~/.config/opencode/; absolute paths are used as-is.
+    "voiceCacheDir": ${JSON.stringify(overrides.voiceCacheDir !== undefined ? overrides.voiceCacheDir : 'voice-cache')},
+    
+    // Maximum cache size in megabytes. Oldest cached audio is removed first.
+    "voiceCacheMaxSizeMB": ${overrides.voiceCacheMaxSizeMB !== undefined ? overrides.voiceCacheMaxSizeMB : 100},
     
     // ============================================================
     // INITIAL TTS MESSAGES (Used immediately or after sound)

@@ -18,6 +18,11 @@ A smart voice notification plugin for [OpenCode](https://opencode.ai) with **mul
 
 <img width="1456" height="720" alt="image" src="https://github.com/user-attachments/assets/52ccf357-2548-400b-a346-6362f2fc3180" />
 
+### OpenCode's Built-in Notifications
+
+OpenCode provides basic built-in notifications via its `internal:notifications` interface. These cover simple toast alerts for common events (task completion, errors, permission requests).
+
+**This plugin is for users who want more:** multi-engine TTS voice narration, intelligent delayed reminders with exponential backoff, AI-generated contextual messages, Discord/webhook integration, custom sound themes, focus-aware suppression, and per-project sound customization. If you only need a simple desktop toast, OpenCode's built-in notifications may be sufficient. If you want a fully-featured voice notification experience, this plugin delivers it.
 
 ## Features
 
@@ -45,7 +50,7 @@ The plugin automatically tries multiple TTS engines in order, falling back if on
 - Per-notification type delays (permission requests are more urgent)
 - **Smart Quota Handling**: Automatically falls back to free Edge TTS if ElevenLabs quota is exceeded
 - **Permission Batching**: Multiple simultaneous permission requests are batched into a single notification (e.g., "5 permission requests require your attention")
-- **Question Tool Support** (SDK v1.1.7+): Notifies when the agent asks questions and needs user input
+- **Question Tool Support** (SDK v2 event): Notifies when the agent asks questions and needs user input
 
 ### AI-Generated Messages
 - **Dynamic notifications**: Use a local AI to generate unique, contextual messages instead of preset static ones
@@ -395,16 +400,16 @@ Focus detection suppresses sound and desktop notifications when the terminal is 
 |-------|--------|
 | `session.idle` | Agent finished working - notify user |
 | `session.error` | Agent encountered an error - alert user |
-| `permission.asked` | Permission request (SDK v1.1.1+) - alert user |
-| `permission.updated` | Permission request (SDK v1.0.x) - alert user |
+| `permission.asked` | Permission request (SDK v2 event) - alert user |
+| `permission.updated` | Permission request (SDK v1 event) - alert user |
 | `permission.replied` | User responded - cancel pending reminders |
-| `question.asked` | Agent asks question (SDK v1.1.7+) - notify user |
+| `question.asked` | Agent asks question (SDK v2 event) - notify user |
 | `question.replied` | User answered question - cancel pending reminders |
 | `question.rejected` | User dismissed question - cancel pending reminders |
 | `message.updated` | New user message - cancel pending reminders |
 | `session.created` | New session - reset state |
 
-> **Note**: The plugin supports OpenCode SDK v1.0.x, v1.1.x, and v1.1.7+ for backward compatibility.
+> **Note**: OpenCode exposes both v1 and v2 SDK event surfaces. This plugin handles both to maintain backward compatibility. `permission.asked` and `question.asked` are v2 SDK events; `permission.updated` is a v1 SDK event. Both are supported regardless of which version `@opencode-ai/plugin` you use (upstream is currently 1.17.3).
 
 ## Development
 
