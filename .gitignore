@@ -1,31 +1,71 @@
 # Dependencies
 node_modules/
 
-# Lock files (let OpenCode/Bun generate fresh ones)
-bun.lock
-bun.lockb
+# Package manager logs & metadata
 package-lock.json
+.yarn-integrity
+.pnpm-debug.log*
+.pnpm-store/
 
 # Debug logs
 *.log
 *-debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
 
 # OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# IDE
+# IDE / Editors
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+*.bak
+*.orig
 
-# Environment
+# Environment & local config
 .env
-.env.local
-tests/.env.local
+.env.*
+!.env.example
 
 # Coverage reports
 coverage/
+*.lcov
 
 # Build output
 dist/
 *.tsbuildinfo
+
+# Cache directories
+.cache/
+.temp/
+tmp/
+temp/
+*.tmp
+
+# Test artifacts
+*.pid
+*.seed
+*.pid.lock
+
+# Misc
+.eslintcache
+.stylelintcache
+.parcel-cache

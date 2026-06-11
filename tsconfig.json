@@ -26,7 +26,8 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]
