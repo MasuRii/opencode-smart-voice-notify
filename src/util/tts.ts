@@ -69,7 +69,7 @@ export const getTTSConfig = (): PluginConfig => {
     ttsEngine: 'elevenlabs',
     enableTTS: true,
     elevenLabsApiKey: '',
-    elevenLabsVoiceIdelevenLabsVoiceId: 'aEO01A4wXwd1O8GPgGlF',
+    elevenLabsVoiceId: 'cgSgspJ2msm6clMCkdW9',
     elevenLabsModel: 'eleven_turbo_v2_5',
     elevenLabsStability: 0.5,
     elevenLabsSimilarity: 0.75,
