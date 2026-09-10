@@ -169,7 +169,7 @@ describe('tts.js', () => {
         await tts.playAudioFile('test.mp3');
         expect(mockShell.getCallCount()).toBe(1);
         expect(mockShell.getLastCall().command).toContain('powershell.exe');
-        expect(mockShell.getLastCall().command).toContain('mciSendString');
+        expect(mockShell.getLastCall().command).toContain('$player.Play');
         expect(mockShell.getLastCall().command).toContain('test.mp3');
       }
     });
@@ -192,7 +192,7 @@ describe('tts.js', () => {
         expect(mockExecFile).toHaveBeenCalledTimes(1);
         expect(mockExecFile.mock.calls[0][0]).toBe('powershell.exe');
         expect(mockExecFile.mock.calls[0][1]).toContain('-Command');
-        expect(mockExecFile.mock.calls[0][1].join(' ')).toContain('mciSendString');
+        expect(mockExecFile.mock.calls[0][1].join(' ')).toContain('$player.Play');
       }
     });
 
@@ -203,7 +203,7 @@ describe('tts.js', () => {
 
       expect(mockShell.getCallCount()).toBe(1);
       expect(mockShell.getLastCall().command).toContain('powershell.exe');
-      expect(mockShell.getLastCall().command).toContain('mciSendString');
+      expect(mockShell.getLastCall().command).toContain('$player.Play');
       expect(mockShell.getLastCall().command).toContain('-lt 2');
     });
 
