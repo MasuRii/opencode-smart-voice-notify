@@ -339,6 +339,10 @@ export const createTTS = ({ $, client }: TTSFactoryParams): TTSAPI => {
     return Math.max(1, Math.floor(value));
   };
 
+  /**
+   * Play an audio file using legacy Windows Media Center (MCI)
+   */
+
   const getWindowsMciPlaybackCommand = (audioPath: string, loopCount: number): string => {
     const safePath = escapePowerShellSingleQuotedString(audioPath);
     return `
@@ -374,15 +378,55 @@ exit 0
   };
 
   /**
+   * Play an audio file using .NET player
+   */
+
+  const getWindowsDotnetPlaybackCommand = (audioPath: string, loopCount: number): string => {
+    const safePath = escapePowerShellSingleQuotedString(audioPath);
+    return `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName presentationCore
+$player = New-Object System.Windows.Media.MediaPlayer
+$filePath = (Resolve-Path "${safePath}").Path
+$player.Open($filePath)
+while ($player.NaturalDuration.HasTimeSpan -eq $false) {
+    Start-Sleep -Milliseconds 50
+}
+$durationSeconds = $player.NaturalDuration.TimeSpan.TotalSeconds
+$player.Play()
+Start-Sleep -Seconds $durationSeconds
+
+try {
+  for ($i = 1; $i -lt ${loopCount}; $i++) {
+    $player.Position = [System.TimeSpan]::Zero
+    $player.Play()
+    Start-Sleep -Seconds $durationSeconds
+  }
+} finally {
+  try { $player.Close() } catch {}
+}
+exit 0
+`;
+  };
+
+  /**
    * Play an audio file using system media player
    */
   const playAudioFile = async (filePath: string, loops = 1): Promise<void> => {
     const safeLoops = getSafeLoopCount(loops);
     try {
       if (currentPlatform === 'win32') {
-        const cmd = getWindowsMciPlaybackCommand(filePath, safeLoops);
-        await runPowerShellCommand(cmd);
-        debugLog(`playAudioFile: Windows MCI playback completed for ${filePath} (${safeLoops}x)`);
+        try {
+          debugLog('playAudioFile: attempting to playAudioFile via .NET');
+          const cmd = getWindowsDotnetPlaybackCommand(filePath, safeLoops);
+          await runPowerShellCommand(cmd);
+          debugLog(`playAudioFile: Windows .NET playback completed for ${filePath} (${safeLoops}x)`);
+        } catch (error) {
+          debugLog(`playAudioFile error: .NET failed ${getErrorMessage(error)} attempting MCI`);
+          const cmd = getWindowsMciPlaybackCommand(filePath, safeLoops);
+          await runPowerShellCommand(cmd);
+          debugLog(`playAudioFile: Windows MCI playback completed for ${filePath} (${safeLoops}x)`);
+        }
       } else if (currentPlatform === 'darwin') {
         if (!shell) {
           debugLog('playAudioFile: shell runner ($) not available for macOS playback');
